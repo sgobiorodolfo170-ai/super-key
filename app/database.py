@@ -1,0 +1,27 @@
+import os
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
+
+from app.config import settings
+
+_db_path = settings.database_url.replace("sqlite+aiosqlite:///", "")
+if _db_path.startswith("./"):
+    _db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), _db_path[2:])
+os.makedirs(os.path.dirname(_db_path), exist_ok=True)
+
+engine = create_async_engine(settings.database_url, echo=False)
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def get_session():
+    async with async_session() as session:
+        yield session

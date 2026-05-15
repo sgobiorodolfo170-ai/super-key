@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Super-Key Admin</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body{margin:0;background:#f8fafc;font-family:system-ui,-apple-system,sans-serif}
+.card{background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:20px}
+.btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:14px;transition:.15s}
+.btn-primary{background:#3b82f6;color:white}
+.btn-primary:hover{background:#2563eb}
+.btn-danger{background:#ef4444;color:white}
+.btn-danger:hover{background:#dc2626}
+.btn-success{background:#22c55e;color:white}
+.btn-success:hover{background:#16a34a}
+.btn-ghost{background:#f1f5f9;color:#475569}
+.btn-ghost:hover{background:#e2e8f0}
+.btn-sm{padding:4px 10px;font-size:12px}
+.input{border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:14px;width:100%;box-sizing:border-box}
+.input:focus{border-color:#3b82f6;outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.badge{padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500}
+.badge-green{background:#dcfce7;color:#16a34a}
+.badge-red{background:#fef2f2;color:#ef4444}
+.badge-gray{background:#f1f5f9;color:#6b7280}
+.badge-blue{background:#eff6ff;color:#3b82f6}
+.nav-item{padding:10px 16px;border-radius:8px;cursor:pointer;margin-bottom:4px;font-size:14px;color:#475569;display:flex;align-items:center;gap:8px}
+.nav-item:hover{background:#f1f5f9}
+.nav-item.active{background:#eff6ff;color:#3b82f6;font-weight:600}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 12px;border-bottom:2px solid #e5e7eb;color:#6b7280;font-size:13px;font-weight:500}
+td{padding:10px 12px;border-bottom:1px solid #f1f5f9;font-size:14px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:white;border-radius:16px;width:560px;max-height:80vh;overflow-y:auto;padding:24px}
+.modal-title{font-size:18px;font-weight:600;margin-bottom:20px}
+.flex{display:flex}
+.flex-1{flex:1}
+.gap-2{gap:8px}
+.gap-3{gap:12px}
+.gap-4{gap:16px}
+.mb-3{margin-bottom:12px}
+.mb-4{margin-bottom:16px}
+.mt-3{margin-top:12px}
+.ml-3{margin-left:12px}
+.text-sm{font-size:13px}
+.text-muted{color:#6b7280}
+.font-medium{font-weight:500}
+textarea.input{min-height:80px;resize:vertical}
+select.input{appearance:auto}
+.copy-btn{cursor:pointer;color:#3b82f6;font-size:12px}
+.copy-btn:hover{text-decoration:underline}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div v-if="!isLoggedIn" class="flex items-center justify-center" style="height:100vh;background:#f8fafc;">
+    <div class="card" style="width:420px;padding:32px;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:48px;margin-bottom:12px;">🔑</div>
+        <div style="font-size:24px;font-weight:700;color:#1e293b;">Super-Key</div>
+        <div style="font-size:14px;color:#64748b;">管理员登录</div>
+      </div>
+      
+      <div v-if="authChecking" class="text-center py-8">
+        <div style="width:32px;height:32px;border:3px solid #3b82f6;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;"></div>
+        <div class="text-sm text-muted">检查登录状态...</div>
+      </div>
+      
+      <div v-else>
+        <div class="mb-4">
+          <label class="text-sm text-muted mb-1 block">用户名</label>
+          <input v-model="loginForm.username" type="text" class="input" placeholder="请输入用户名">
+        </div>
+        
+        <div class="mb-6">
+          <label class="text-sm text-muted mb-1 block">密码</label>
+          <input v-model="loginForm.password" type="password" class="input" placeholder="请输入密码">
+        </div>
+        
+        <button 
+          @click="handleLogin" 
+          :disabled="loginLoading"
+          class="btn btn-primary w-full"
+          :style="{opacity: loginLoading ? 0.7 : 1}"
+        >
+          {{ loginLoading ? '登录中...' : '登录' }}
+        </button>
+        
+        <div v-if="loginError" class="mt-3 text-sm text-red-500 text-center">{{ loginError }}</div>
+        
+        <div class="mt-4 text-center text-xs text-gray-400">
+          默认账号: admin / admin123
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div v-else class="flex" style="height:100vh">
+    <!-- Sidebar -->
+    <div style="width:220px;background:white;border-right:1px solid #e5e7eb;padding:16px;display:flex;flex-direction:column">
+      <div style="font-size:20px;font-weight:700;color:#3b82f6;margin-bottom:24px;padding:8px">🔑 Super-Key</div>
+      <nav style="flex:1">
+        <div v-for="item in navItems" :key="item.id" :class="['nav-item', {active: currentNav === item.id}]" @click="currentNav = item.id">
+          <span>{{item.icon}}</span>
+          <span>{{item.label}}</span>
+        </div>
+      </nav>
+      <div style="border-top:1px solid #e5e7eb;padding-top:12px">
+        <div class="text-sm text-muted">{{ currentUser }}</div>
+        <div class="text-sm" style="color:#ef4444;cursor:pointer" @click="handleLogout">退出登录</div>
+      </div>
+    </div>
+    <!-- Main -->
+    <div class="flex-1" style="overflow-y:auto;padding:24px">
+      <!-- Overview -->
+      <div v-if="currentNav === 'overview'">
+        <h2 style="font-size:22px;font-weight:600;margin-bottom:20px">📊 概览</h2>
+        <div class="flex gap-4 mb-4" style="flex-wrap:wrap">
+          <div class="card" style="min-width:140px;flex:1">
+            <div class="text-muted text-sm">API Key</div>
+            <div style="font-size:28px;font-weight:700">{{apiKeys.length}}</div>
+          </div>
+          <div class="card" style="min-width:140px;flex:1">
+            <div class="text-muted text-sm">自定义模型</div>
+            <div style="font-size:28px;font-weight:700">{{customModels.length}}</div>
+          </div>
+          <div class="card" style="min-width:140px;flex:1">
+            <div class="text-muted text-sm">渠道</div>
+            <div style="font-size:28px;font-weight:700">{{stats.channels}}</div>
+          </div>
+          <div class="card" style="min-width:140px;flex:1">
+            <div class="text-muted text-sm">提供商</div>
+            <div style="font-size:28px;font-weight:700">{{stats.providers}}</div>
+          </div>
+          <div class="card" style="min-width:140px;flex:1">
+            <div class="text-muted text-sm">总请求</div>
+            <div style="font-size:28px;font-weight:700">{{stats.total_requests}}</div>
+          </div>
+        </div>
+        <div class="card mb-4">
+          <div class="text-muted text-sm mb-2">中转地址 (Base URL)</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <code style="background:#f1f5f9;padding:8px 12px;border-radius:6px;font-size:14px;flex:1;word-break:break-all">{{baseUrl}}/v1</code>
+            <span class="copy-btn" @click="copyToClipboard(baseUrl + '/v1')">复制</span>
+          </div>
+          <div class="text-sm text-muted mt-2">API 端点: <code>/chat/completions</code> | 认证: <code>Bearer Token</code></div>
+          <div class="flex gap-2 mt-3" style="align-items:center;flex-wrap:wrap">
+            <select class="input" v-model="selectedRelayApiKey" style="width:240px">
+              <option value="">选择 API Key</option>
+              <option v-for="k in apiKeys" :key="k.id" :value="k.full_key">{{k.name}} ({{k.full_key.slice(0,8)}}...)</option>
+            </select>
+            <select class="input" v-model="relayTestModel" style="width:280px">
+              <option value="">选择测试模型</option>
+              <optgroup label="自定义模型">
+                <option v-for="m in customModels" :key="m.id" :value="m.model_id">{{m.model_id}}</option>
+              </optgroup>
+              <optgroup label="常用模型">
+                <option value="gpt-4o">gpt-4o</option>
+                <option value="gpt-4o-mini">gpt-4o-mini</option>
+                <option value="gpt-4">gpt-4</option>
+                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+                <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022</option>
+              </optgroup>
+            </select>
+            <button class="btn btn-primary" @click="testRelay" :disabled="testingRelay || !selectedRelayApiKey || !relayTestModel">
+              {{testingRelay ? '测试中...' : '中转测试'}}
+            </button>
+            <span v-if="relayTestResult" :class="['badge', 'ml-3', relayTestResult.success ? 'badge-green' : 'badge-red']">
+              {{relayTestResult.message}}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Keys -->
+      <div v-if="currentNav === 'apikeys'">
+        <div class="flex mb-4" style="justify-content:space-between;align-items:center">
+          <h2 style="font-size:22px;font-weight:600">🔑 API Key 管理</h2>
+          <button class="btn btn-primary" @click="openApiKeyModal()">+ 新增 Key</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>名称</th><th>Key</th><th>允许模型</th><th>状态</th><th>请求数</th><th>最后使用</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="k in apiKeys" :key="k.id">
+                <td><strong>{{k.name}}</strong></td>
+                <td>
+                  <span class="font-medium" style="font-family:monospace">{{k.full_key}}</span>
+                  <span class="copy-btn" @click="copyToClipboard(k.full_key)">复制</span>
+                </td>
+                <td><span class="text-sm">{{k.models || '全部'}}</span></td>
+                <td><span :class="['badge',k.is_active?'badge-green':'badge-red']">{{k.is_active?'启用':'禁用'}}</span></td>
+                <td>{{k.request_count}}</td>
+                <td class="text-sm">{{k.last_used_at?k.last_used_at.slice(0,19):'-'}}</td>
+                <td>
+                  <div class="flex gap-2">
+                    <button class="btn btn-ghost btn-sm" @click="openApiKeyModal(k)">编辑</button>
+                    <button class="btn btn-ghost btn-sm" @click="regenerateKey(k.id)">重置</button>
+                    <button class="btn btn-danger btn-sm" @click="deleteApiKey(k.id)">删除</button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!apiKeys.length"><td colspan="7" style="text-align:center;color:#9ca3af;padding:40px">暂无 API Key，请新增</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Custom Models -->
+      <div v-if="currentNav === 'custommodels'">
+        <div class="flex mb-4" style="justify-content:space-between;align-items:center">
+          <h2 style="font-size:22px;font-weight:600">🎯 自定义模型</h2>
+          <button class="btn btn-primary" @click="openCustomModelModal()">+ 新增模型</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>名称</th><th>模型ID</th><th>模式</th><th>目标模型</th><th>渠道</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="m in customModels" :key="m.id">
+                <td><strong>{{m.name}}</strong></td>
+                <td><span class="badge badge-blue">{{m.model_id}}</span></td>
+                <td><span class="badge" :class="m.selection_mode==='specific'?'badge-gray':'badge-green'">{{m.selection_mode==='specific'?'指定渠道':'自动选择'}}</span></td>
+                <td>{{m.target_model || '-'}}</td>
+                <td>{{m.channel_id?'#'+m.channel_id:'-'}}</td>
+                <td><span :class="['badge',m.is_active?'badge-green':'badge-red']">{{m.is_active?'启用':'禁用'}}</span></td>
+                <td>
+                  <div class="flex gap-2">
+                    <button class="btn btn-ghost btn-sm" @click="openCustomModelModal(m)">编辑</button>
+                    <button class="btn btn-danger btn-sm" @click="deleteCustomModel(m.id)">删除</button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!customModels.length"><td colspan="7" style="text-align:center;color:#9ca3af;padding:40px">暂无自定义模型，请新增</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Channels -->
+      <div v-if="currentNav === 'channels'">
+        <div class="flex mb-4" style="justify-content:space-between;align-items:center">
+          <h2 style="font-size:22px;font-weight:600">🔌 渠道管理</h2>
+          <button class="btn btn-primary" @click="openChannelModal()">+ 新增渠道</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr>
+              <th>名称</th><th>提供商</th><th>类型</th><th>模型数</th><th>状态</th><th>响应</th><th>操作</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="c in channels" :key="c.id">
+                <td><strong>{{c.name}}</strong></td>
+                <td><span class="text-sm">{{providerMap[c.provider_id]||c.provider_id}}</span></td>
+                <td><span class="badge badge-gray">{{c.api_type}}</span></td>
+                <td>{{c.model_count}}</td>
+                <td><span :class="['badge',c.status===1?'badge-green':'badge-red']">{{c.status===1?'启用':'禁用'}}</span></td>
+                <td>{{c.response_time>0?c.response_time+'ms':'-'}}</td>
+                <td>
+                  <div class="flex gap-2">
+                    <button class="btn btn-ghost btn-sm" @click="testChannel(c.id)">测试</button>
+                    <button class="btn btn-ghost btn-sm" @click="autoConfig(c.id)">自动配置</button>
+                    <button class="btn btn-ghost btn-sm" @click="openChannelModal(c)">编辑</button>
+                    <button class="btn btn-ghost btn-sm" @click="toggleChannel(c)">{{c.status===1?'禁用':'启用'}}</button>
+                    <button class="btn btn-danger btn-sm" @click="deleteChannel(c.id)">删除</button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!channels.length"><td colspan="7" style="text-align:center;color:#9ca3af;padding:40px">暂无渠道，请新增</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Providers -->
+      <div v-if="currentNav === 'providers'">
+        <div class="flex mb-4" style="justify-content:space-between;align-items:center">
+          <h2 style="font-size:22px;font-weight:600">🏢 提供商</h2>
+          <button class="btn btn-primary" @click="openProviderModal()">+ 新增提供商</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>名称</th><th>代码</th><th>API Base</th><th>内置</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="p in providers" :key="p.id">
+                <td><strong>{{p.name}}</strong></td>
+                <td><span class="badge badge-gray">{{p.code}}</span></td>
+                <td class="text-sm text-muted">{{p.api_base||'-'}}</td>
+                <td>{{p.is_builtin?'是':'否'}}</td>
+                <td><span :class="['badge',p.is_active?'badge-green':'badge-red']">{{p.is_active?'激活':'停用'}}</span></td>
+                <td>
+                  <div class="flex gap-2">
+                    <button class="btn btn-ghost btn-sm" @click="openProviderModal(p)">编辑</button>
+                    <button class="btn btn-danger btn-sm" @click="deleteProvider(p)">删除</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Models -->
+      <div v-if="currentNav === 'models'">
+        <div class="flex mb-4" style="justify-content:space-between;align-items:center">
+          <h2 style="font-size:22px;font-weight:600">🧠 模型分类</h2>
+          <button class="btn btn-primary" @click="openModelModal()">+ 新增模型</button>
+        </div>
+        <div class="flex gap-3 mb-4" style="flex-wrap:wrap">
+          <button v-for="cat in modelCategories" :key="cat.id" :class="['btn',modelsCategoryFilter===cat.id?'btn-primary':'btn-ghost','btn-sm']" @click="modelsCategoryFilter = modelsCategoryFilter===cat.id?'':cat.id">{{cat.name}}</button>
+          <input class="input" style="width:200px" placeholder="搜索模型..." v-model="modelsKeyword" @input="loadAllModels">
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>模型ID</th><th>名称</th><th>分类</th><th>提供商</th><th>上下文</th><th>价格(输入/输出)</th><th>流式</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="m in filteredModels" :key="m.id">
+                <td class="font-medium">{{m.model_id}}</td>
+                <td>{{m.model_name}}</td>
+                <td><span class="badge badge-gray">{{categoryLabels[m.category]||m.category}}</span></td>
+                <td>{{m.provider_code}}</td>
+                <td>{{(m.context_window/1000).toFixed(0)}}K</td>
+                <td class="text-sm">${{m.pricing_input}} / ${{m.pricing_output}}</td>
+                <td>{{m.supports_streaming?'✅':''}}</td>
+                <td>
+                  <div class="flex gap-2">
+                    <button v-if="!m.is_builtin" class="btn btn-ghost btn-sm" @click="openModelModal(m)">编辑</button>
+                    <button v-if="!m.is_builtin" class="btn btn-danger btn-sm" @click="deleteModel(m.id)">删除</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div v-if="currentNav === 'logs'">
+        <h2 style="font-size:22px;font-weight:600;margin-bottom:16px">📋 请求日志</h2>
+        <div class="card">
+          <table>
+            <thead><tr><th>时间</th><th>模型</th><th>渠道</th><th>延迟</th><th>Token(入/出)</th><th>状态</th><th>错误</th></tr></thead>
+            <tbody>
+              <tr v-for="l in logs" :key="l.id" :style="{background:l.is_error?'#fef2f2':''}">
+                <td class="text-sm">{{l.created_at?.slice(0,19)||'-'}}</td>
+                <td class="font-medium">{{l.model}}</td>
+                <td>#{{l.channel_id}}</td>
+                <td>{{l.latency_ms}}ms</td>
+                <td>{{l.input_tokens}} / {{l.output_tokens}}</td>
+                <td>{{l.status_code}}</td>
+                <td class="text-sm text-muted">{{l.error_message?.slice(0,60)||'✅'}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Settings -->
+      <div v-if="currentNav === 'settings'">
+        <h2 style="font-size:22px;font-weight:600;margin-bottom:16px">⚙️ 账户设置</h2>
+        <div class="card" style="max-width:600px">
+          <h3 style="font-size:18px;font-weight:600;margin-bottom:16px">修改密码</h3>
+          <div class="mb-3">
+            <label class="text-sm text-muted mb-1 block">当前密码 *</label>
+            <input type="password" class="input" v-model="passwordForm.old_password" placeholder="请输入当前密码">
+          </div>
+          <div class="mb-3">
+            <label class="text-sm text-muted mb-1 block">新密码 *</label>
+            <input type="password" class="input" v-model="passwordForm.new_password" placeholder="请输入新密码（至少6位）">
+          </div>
+          <div class="mb-3">
+            <label class="text-sm text-muted mb-1 block">确认新密码 *</label>
+            <input type="password" class="input" v-model="passwordForm.confirm_password" placeholder="请再次输入新密码">
+          </div>
+          <div class="flex gap-3" style="justify-content:flex-end">
+            <button class="btn btn-ghost" @click="resetPasswordForm">重置</button>
+            <button class="btn btn-primary" @click="changePassword" :disabled="passwordChanging">
+              {{passwordChanging ? '修改中...' : '修改密码'}}
+            </button>
+          </div>
+          <div v-if="passwordChangeResult" class="mt-3 text-sm" :style="{color:passwordChangeResult.success?'#22c55e':'#ef4444'}">
+            {{passwordChangeResult.message}}
+          </div>
+        </div>
+
+        <div class="card" style="max-width:600px;margin-top:16px">
+          <h3 style="font-size:18px;font-weight:600;margin-bottom:16px">修改用户名</h3>
+          <div class="mb-3">
+            <label class="text-sm text-muted mb-1 block">当前用户名</label>
+            <div class="input" style="background:#f8fafc;color:#64748b">{{currentUser}}</div>
+          </div>
+          <div class="mb-3">
+            <label class="text-sm text-muted mb-1 block">新用户名 *</label>
+            <input type="text" class="input" v-model="usernameForm.new_username" placeholder="请输入新用户名">
+          </div>
+          <div class="mb-3">
+            <label class="text-sm text-muted mb-1 block">确认密码 *</label>
+            <input type="password" class="input" v-model="usernameForm.password" placeholder="请输入当前密码以确认身份">
+          </div>
+          <div class="flex gap-3" style="justify-content:flex-end">
+            <button class="btn btn-ghost" @click="resetUsernameForm">重置</button>
+            <button class="btn btn-primary" @click="changeUsername" :disabled="usernameChanging">
+              {{usernameChanging ? '修改中...' : '修改用户名'}}
+            </button>
+          </div>
+          <div v-if="usernameChangeResult" class="mt-3 text-sm" :style="{color:usernameChangeResult.success?'#22c55e':'#ef4444'}">
+            {{usernameChangeResult.message}}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- API Key Modal -->
+  <div class="modal-overlay" v-if="showApiKeyModal" @click.self="showApiKeyModal=false">
+    <div class="modal">
+      <div class="modal-title">{{editingApiKey?'编辑 API Key':'新增 API Key'}}</div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">名称 *</label>
+        <input class="input" v-model="apiKeyForm.name" placeholder="如: 开发环境 Key">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">允许访问的模型 (留空=全部，逗号分隔)</label>
+        <textarea class="input" v-model="apiKeyForm.models" placeholder="gpt-4o,claude-3-sonnet"></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">过期时间</label>
+        <div class="flex gap-2" style="align-items:center">
+          <select class="input" v-model="apiKeyForm.expire_type" style="width:140px;flex-shrink:0">
+            <option value="never">永久有效</option>
+            <option value="custom">自定义时间</option>
+          </select>
+          <input v-if="apiKeyForm.expire_type === 'custom'" class="input" type="datetime-local" v-model="apiKeyForm.expires_at">
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="flex gap-2" style="align-items:center">
+          <input type="checkbox" v-model="apiKeyForm.is_active"> <span class="text-sm">启用</span>
+        </label>
+      </div>
+      <div class="flex gap-3" style="justify-content:flex-end">
+        <button class="btn btn-ghost" @click="showApiKeyModal=false">取消</button>
+        <button class="btn btn-primary" @click="saveApiKey">{{editingApiKey?'保存':'创建'}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Model Modal -->
+  <div class="modal-overlay" v-if="showCustomModelModal" @click.self="showCustomModelModal=false">
+    <div class="modal">
+      <div class="modal-title">{{editingCustomModel?'编辑自定义模型':'新增自定义模型'}}</div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">显示名称 *</label>
+        <input class="input" v-model="customModelForm.name" placeholder="如: 我的 GPT-4">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">模型 ID * (API 调用时使用)</label>
+        <input class="input" v-model="customModelForm.model_id" placeholder="如: my-gpt-4">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">渠道选择模式</label>
+        <select class="input" v-model="customModelForm.selection_mode">
+          <option value="auto">自动选择 (从支持该模型的渠道中选择)</option>
+          <option value="specific">指定渠道 (固定使用某个渠道)</option>
+          <option value="multi">多渠道 (从多个渠道中按权重分配)</option>
+        </select>
+      </div>
+      <div class="mb-3" v-if="customModelForm.selection_mode === 'specific'">
+        <label class="text-sm text-muted">目标模型 ID (实际调用的模型)</label>
+        <select class="input" v-model="customModelForm.target_model">
+          <option value="">请选择目标模型</option>
+          <option v-for="model in availableChannelModels" :key="model" :value="model">{{model}}</option>
+        </select>
+      </div>
+      <div class="mb-3" v-if="customModelForm.selection_mode === 'specific'">
+        <label class="text-sm text-muted">指定渠道</label>
+        <select class="input" v-model="customModelForm.channel_id">
+          <option :value="null">请选择渠道</option>
+          <option v-for="c in channels" :key="c.id" :value="c.id">{{c.name}} ({{c.api_type}})</option>
+        </select>
+      </div>
+      <div class="mb-3" v-if="customModelForm.selection_mode === 'specific'">
+        <label class="text-sm text-muted">渠道模型名称 (可选，留空则使用目标模型)</label>
+        <input class="input" v-model="customModelForm.channel_model" placeholder="渠道中的实际模型名">
+      </div>
+      <div class="mb-3" v-if="customModelForm.selection_mode === 'multi'">
+        <label class="text-sm text-muted">多渠道配置</label>
+        <div v-for="(mapping, index) in customModelForm.channel_mappings" :key="index" class="mb-2" style="background:#f8fafc;padding:12px;border-radius:6px">
+          <div class="flex gap-2 mb-2">
+            <select class="input" style="flex:1" v-model="mapping.channel_id">
+              <option :value="null">选择渠道</option>
+              <option v-for="c in channels" :key="c.id" :value="c.id">{{c.name}} ({{c.api_type}})</option>
+            </select>
+            <button class="btn btn-danger btn-sm" @click="removeChannelMapping(index)">删除</button>
+          </div>
+          <div class="flex gap-2">
+            <input class="input" style="flex:1" v-model="mapping.target_model" placeholder="目标模型 ID">
+            <input class="input" style="flex:1" v-model="mapping.channel_model" placeholder="渠道模型名称(可选)">
+            <input class="input" style="width:80px" type="number" v-model="mapping.weight" min="1" max="100" placeholder="权重">
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="addChannelMapping">+ 添加渠道</button>
+      </div>
+      <div class="mb-3">
+        <label class="flex gap-2" style="align-items:center">
+          <input type="checkbox" v-model="customModelForm.is_active"> <span class="text-sm">启用</span>
+        </label>
+      </div>
+      <div class="flex gap-3" style="justify-content:flex-end">
+        <button class="btn btn-ghost" @click="showCustomModelModal=false">取消</button>
+        <button class="btn btn-primary" @click="saveCustomModel">{{editingCustomModel?'保存':'创建'}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Channel Modal -->
+  <div class="modal-overlay" v-if="showChannelModal" @click.self="showChannelModal=false">
+    <div class="modal">
+      <div class="modal-title">{{editingChannel?'编辑渠道':'新增渠道'}}</div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">名称 *</label>
+        <input class="input" v-model="channelForm.name" placeholder="如: 我的 OpenAI">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">提供商</label>
+        <select class="input" v-model="channelForm.provider_id">
+          <option v-for="p in providers" :key="p.id" :value="p.id">{{p.name}}</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">API 类型</label>
+        <select class="input" v-model="channelForm.api_type">
+          <option value="openai">OpenAI 兼容</option>
+          <option value="gemini">Gemini</option>
+          <option value="claude">Claude</option>
+          <option value="custom">自定义</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">API Key *</label>
+        <input class="input" type="password" v-model="channelForm.api_key" placeholder="sk-...">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">API Base URL</label>
+        <input class="input" v-model="channelForm.api_base" placeholder="如 https://api.openai.com/v1">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">模型列表 (逗号分隔)</label>
+        <textarea class="input" v-model="channelForm.models" placeholder="gpt-4o,gpt-4o-mini"></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">权重 (1-100)</label>
+        <input class="input" type="number" v-model="channelForm.weight" min="1" max="100">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">超时 (秒)</label>
+        <input class="input" type="number" v-model="channelForm.timeout" min="5" max="300">
+      </div>
+      <div class="flex gap-3" style="justify-content:flex-end">
+        <button class="btn btn-ghost" @click="showChannelModal=false">取消</button>
+        <button class="btn btn-primary" @click="saveChannel">{{editingChannel?'保存':'创建'}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Provider Modal -->
+  <div class="modal-overlay" v-if="showProviderModal" @click.self="showProviderModal=false">
+    <div class="modal">
+      <div class="modal-title">
+        {{editingProvider ? '编辑提供商' : '新增提供商'}}
+        <span v-if="editingProvider?.is_builtin" class="badge badge-blue ml-3">内置</span>
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">名称 *</label>
+        <input class="input" v-model="providerForm.name" placeholder="如: 我的 OpenAI">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">代码 *</label>
+        <input class="input" v-model="providerForm.code" placeholder="如: openai" :disabled="!!editingProvider?.is_builtin">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">API Base URL</label>
+        <input class="input" v-model="providerForm.api_base" placeholder="如 https://api.openai.com/v1">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">官网</label>
+        <input class="input" v-model="providerForm.website" placeholder="如 https://openai.com">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">描述</label>
+        <textarea class="input" v-model="providerForm.description" placeholder="提供商描述信息" rows="2"></textarea>
+      </div>
+      <div class="mb-3">
+        <label class="flex gap-2" style="align-items:center">
+          <input type="checkbox" v-model="providerForm.is_active"> <span class="text-sm">激活</span>
+        </label>
+      </div>
+      <div class="flex gap-3" style="justify-content:flex-end">
+        <button class="btn btn-ghost" @click="showProviderModal=false">取消</button>
+        <button class="btn btn-primary" @click="saveProvider">{{editingProvider?'保存':'创建'}}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Modal -->
+  <div class="modal-overlay" v-if="showModelModal" @click.self="showModelModal=false">
+    <div class="modal">
+      <div class="modal-title">{{editingModel?'编辑模型':'新增模型'}}</div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">模型ID *</label>
+        <input class="input" v-model="modelForm.model_id" placeholder="如: gpt-4" :disabled="editingModel">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">模型名称</label>
+        <input class="input" v-model="modelForm.model_name" placeholder="如: GPT-4">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">提供商</label>
+        <select class="input" v-model="modelForm.provider_id">
+          <option v-for="p in providers" :key="p.id" :value="p.id">{{p.name}}</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">分类</label>
+        <select class="input" v-model="modelForm.category">
+          <option v-for="cat in modelCategories" :key="cat.id" :value="cat.id">{{cat.name}}</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">上下文窗口</label>
+        <input class="input" type="number" v-model="modelForm.context_window" placeholder="如: 128000">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">输入价格 (每 1K tokens)</label>
+        <input class="input" type="number" step="0.001" v-model="modelForm.pricing_input" placeholder="如: 0.01">
+      </div>
+      <div class="mb-3">
+        <label class="text-sm text-muted">输出价格 (每 1K tokens)</label>
+        <input class="input" type="number" step="0.001" v-model="modelForm.pricing_output" placeholder="如: 0.03">
+      </div>
+      <div class="mb-3">
+        <label class="flex gap-2" style="align-items:center">
+          <input type="checkbox" v-model="modelForm.supports_streaming"> <span class="text-sm">支持流式</span>
+        </label>
+      </div>
+      <div class="mb-3">
+        <label class="flex gap-2" style="align-items:center">
+          <input type="checkbox" v-model="modelForm.is_active"> <span class="text-sm">激活</span>
+        </label>
+      </div>
+      <div class="flex gap-3" style="justify-content:flex-end">
+        <button class="btn btn-ghost" @click="showModelModal=false">取消</button>
+        <button class="btn btn-primary" @click="saveModel">{{editingModel?'保存':'创建'}}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const {createApp, reactive, ref, computed, onMounted, watch} = Vue
+
+let adminSessionId = localStorage.getItem('sk_admin_session') || ''
+
+async function api(path, opts={}){
+  const headers = {'Content-Type':'application/json',...opts.headers}
+  if(adminSessionId) {
+    headers['X-Session-Id'] = adminSessionId
+  }
+  const res = await fetch(path, {...opts, headers})
+  if(!res.ok) {
+    const err = await res.text()
+    if(res.status === 401) {
+      localStorage.removeItem('sk_admin_session')
+      adminSessionId = ''
+      window.location.reload()
+    }
+    throw new Error(err)
+  }
+  return res.json()
+}
+
+createApp({
+  setup(){
+    const isLoggedIn = ref(false)
+    const authChecking = ref(true)
+    const loginForm = reactive({username:'', password:''})
+    const loginLoading = ref(false)
+    const loginError = ref('')
+    const currentUser = ref('')
+
+    async function checkAuth(){
+      isLoggedIn.value = false
+      authChecking.value = true
+      currentUser.value = ''
+      try{
+        const res = await api('/admin/auth/check')
+        if(res.authenticated){
+          isLoggedIn.value = true
+          currentUser.value = res.username
+        }
+      }catch(e){
+        console.log('Auth check failed:', e)
+        isLoggedIn.value = false
+      }finally{
+        authChecking.value = false
+      }
+    }
+
+    async function handleLogin(){
+      loginLoading.value = true
+      loginError.value = ''
+      
+      if(!loginForm.username || !loginForm.password){
+        loginError.value = '请输入用户名和密码'
+        loginLoading.value = false
+        return
+      }
+
+      try{
+        const formData = new FormData()
+        formData.append('username', loginForm.username)
+        formData.append('password', loginForm.password)
+        
+        const res = await fetch('/admin/login', {
+          method: 'POST',
+          body: formData
+        })
+        
+        const data = await res.json()
+        
+        if(res.ok && data.success){
+          adminSessionId = data.session_id
+          localStorage.setItem('sk_admin_session', data.session_id)
+          currentUser.value = data.username
+          isLoggedIn.value = true
+        }else{
+          loginError.value = data.detail || '登录失败'
+        }
+      }catch(e){
+        loginError.value = '登录失败: ' + e.message
+      }finally{
+        loginLoading.value = false
+      }
+    }
+
+    function handleLogout(){
+      localStorage.removeItem('sk_admin_session')
+      adminSessionId = ''
+      isLoggedIn.value = false
+      currentUser.value = ''
+    }
+
+    const currentNav = ref('overview')
+    const navItems = [
+      {id:'overview',label:'概览',icon:'📊'},
+      {id:'apikeys',label:'API Key',icon:'🔑'},
+      {id:'custommodels',label:'自定义模型',icon:'🎯'},
+      {id:'channels',label:'渠道',icon:'🔌'},
+      {id:'providers',label:'提供商',icon:'🏢'},
+      {id:'models',label:'模型',icon:'🧠'},
+      {id:'logs',label:'日志',icon:'📋'},
+      {id:'settings',label:'设置',icon:'⚙️'},
+    ]
+
+    const stats = reactive({channels:0,providers:0,models:0,total_requests:0,avg_latency_ms:0})
+    const testingRelay = ref(false)
+    const relayTestResult = ref(null)
+    const selectedRelayApiKey = ref('')
+    const relayTestModel = ref('')
+    const channels = ref([])
+    const providers = ref([])
+    const allModels = ref([])
+    const logs = ref([])
+    const apiKeys = ref([])
+    const customModels = ref([])
+    const presetStatus = reactive({provider_count:0,model_count:0})
+    const providerMap = reactive({})
+    const modelsCategoryFilter = ref('')
+    const modelsKeyword = ref('')
+    const categoryLabels = {
+      omni_modal:'全模态',deep_thinking:'深度思考',text_generation:'文本生成',
+      vision_understanding:'视觉理解',video_generation:'视频生成',image_generation:'图片生成',
+      '3d_generation':'3D生成',speech_recognition:'语音识别',speech_synthesis:'语音合成',
+      multimodal_embedding:'多模态向量',text_embedding:'文本向量',realtime_omni:'实时全模态',
+      realtime_speech_synthesis:'实时语音合成',realtime_speech_recognition:'实时语音识别',
+      realtime_speech_translation:'实时语音翻译'
+    }
+    const modelCategories = ref([])
+
+    const showApiKeyModal = ref(false)
+    const editingApiKey = ref(null)
+    const apiKeyForm = reactive({name:'',models:'',expire_type:'never',expires_at:'',is_active:true})
+
+    const showCustomModelModal = ref(false)
+    const editingCustomModel = ref(null)
+    const customModelForm = reactive({name:'',model_id:'',selection_mode:'auto',target_model:'',channel_id:null,channel_model:'',is_active:true,channel_mappings:[]})
+
+    const showChannelModal = ref(false)
+    const editingChannel = ref(null)
+    const channelForm = reactive({
+      name:'',provider_id:1,api_type:'openai',api_key:'',api_base:'',
+      models:'',weight:1,timeout:60
+    })
+
+    const showProviderModal = ref(false)
+    const editingProvider = ref(null)
+    const providerForm = reactive({name:'',code:'',api_base:'',website:'',description:'',is_active:true})
+
+    const showModelModal = ref(false)
+    const editingModel = ref(null)
+    const modelForm = reactive({
+      model_id:'',model_name:'',provider_id:'',category:'text_generation',
+      context_window:8192,pricing_input:0,pricing_output:0,supports_streaming:true,is_active:true
+    })
+
+    // Password change
+    const passwordForm = reactive({old_password:'',new_password:'',confirm_password:''})
+    const passwordChanging = ref(false)
+    const passwordChangeResult = ref(null)
+
+    function resetPasswordForm(){
+      passwordForm.old_password = ''
+      passwordForm.new_password = ''
+      passwordForm.confirm_password = ''
+      passwordChangeResult.value = null
+    }
+
+    async function changePassword(){
+      if(!passwordForm.old_password){
+        passwordChangeResult.value = {success:false, message:'请输入当前密码'}
+        return
+      }
+      if(!passwordForm.new_password || passwordForm.new_password.length < 6){
+        passwordChangeResult.value = {success:false, message:'新密码至少需要6位'}
+        return
+      }
+      if(passwordForm.new_password !== passwordForm.confirm_password){
+        passwordChangeResult.value = {success:false, message:'两次输入的密码不一致'}
+        return
+      }
+
+      passwordChanging.value = true
+      passwordChangeResult.value = null
+
+      try{
+        await api('/admin/change-password',{
+          method:'POST',
+          body:JSON.stringify({
+            old_password: passwordForm.old_password,
+            new_password: passwordForm.new_password
+          })
+        })
+        passwordChangeResult.value = {success:true, message:'密码修改成功！'}
+        resetPasswordForm()
+      }catch(e){
+        passwordChangeResult.value = {success:false, message:'密码修改失败: ' + e.message}
+      }finally{
+        passwordChanging.value = false
+      }
+    }
+
+    // Username change
+    const usernameForm = reactive({new_username:'', password:''})
+    const usernameChanging = ref(false)
+    const usernameChangeResult = ref(null)
+
+    function resetUsernameForm(){
+      usernameForm.new_username = ''
+      usernameForm.password = ''
+      usernameChangeResult.value = null
+    }
+
+    async function changeUsername(){
+      if(!usernameForm.new_username){
+        usernameChangeResult.value = {success:false, message:'请输入新用户名'}
+        return
+      }
+      if(!usernameForm.password){
+        usernameChangeResult.value = {success:false, message:'请输入当前密码'}
+        return
+      }
+      if(usernameForm.new_username === currentUser.value){
+        usernameChangeResult.value = {success:false, message:'新用户名不能与当前用户名相同'}
+        return
+      }
+
+      usernameChanging.value = true
+      usernameChangeResult.value = null
+
+      try{
+        const res = await api('/admin/change-username',{
+          method:'POST',
+          body:JSON.stringify({
+            new_username: usernameForm.new_username,
+            password: usernameForm.password
+          })
+        })
+        usernameChangeResult.value = {success:true, message:'用户名修改成功！'}
+        currentUser.value = res.new_username
+        resetUsernameForm()
+      }catch(e){
+        usernameChangeResult.value = {success:false, message:'用户名修改失败: ' + e.message}
+      }finally{
+        usernameChanging.value = false
+      }
+    }
+
+    async function testRelay(){
+      if(!selectedRelayApiKey.value){
+        relayTestResult.value = {success: false, message: '请先选择 API Key'}
+        return
+      }
+      if(!relayTestModel.value){
+        relayTestResult.value = {success: false, message: '请先选择测试模型'}
+        return
+      }
+      testingRelay.value = true
+      relayTestResult.value = null
+      try{
+        const start = Date.now()
+        const res = await fetch('/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + selectedRelayApiKey.value,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: relayTestModel.value,
+            messages: [{role: 'user', content: 'hi'}],
+            max_tokens: 5
+          })
+        })
+        const elapsed = Date.now() - start
+        if(res.ok){
+          relayTestResult.value = {success: true, message: `连接成功 (${elapsed}ms)`}
+        } else {
+          const errText = await res.text().catch(() => '')
+          relayTestResult.value = {success: false, message: `失败 ${res.status}: ${errText.slice(0, 100)}`}
+        }
+      } catch(e){
+        relayTestResult.value = {success: false, message: `连接失败: ${e.message}`}
+      }
+      testingRelay.value = false
+    }
+
+    async function loadStats(){
+      const d = await api('/admin/stats/overview')
+      Object.assign(stats,d)
+    }
+    async function loadChannels(){
+      const d = await api('/admin/channels')
+      channels.value = d.data
+    }
+    async function loadProviders(){
+      const d = await api('/admin/providers')
+      providers.value = d.data
+      d.data.forEach(p=>{providerMap[p.id]=p.name})
+    }
+    async function loadAllModels(){
+      let url = '/admin/models'
+      const params = []
+      if(modelsCategoryFilter.value) params.push('category='+modelsCategoryFilter.value)
+      if(params.length) url += '?'+params.join('&')
+      const d = await api(url)
+      allModels.value = d.data
+    }
+    async function loadLogs(){
+      try{
+        const d = await api('/admin/logs?page_size=50')
+        logs.value = d.data
+      }catch(e){}
+    }
+    async function loadApiKeys(){
+      try{
+        const d = await api('/admin/api-keys')
+        apiKeys.value = d.data
+      }catch(e){}
+    }
+    async function loadCustomModels(){
+      try{
+        const d = await api('/admin/custom-models')
+        customModels.value = d.data
+      }catch(e){}
+    }
+    async function loadPresetStatus(){
+      const d = await api('/admin/presets/status')
+      Object.assign(presetStatus,d)
+    }
+    async function loadCategories(){
+      const d = await api('/admin/models/categories')
+      modelCategories.value = d.data
+    }
+
+    const serverPublicUrl = ref('')
+    
+    async function loadServerInfo(){
+      try{
+        const res = await api('/admin/server-info')
+        if(res.data && res.data.public_url){
+          serverPublicUrl.value = res.data.public_url
+        }
+      }catch(e){
+        console.log('Failed to load server info:', e)
+      }
+    }
+    
+    const baseUrl = computed(()=>{
+      if(serverPublicUrl.value){
+        return serverPublicUrl.value
+      }
+      const protocol = window.location.protocol
+      const host = window.location.host
+      return `${protocol}//${host}`
+    })
+
+    const filteredModels = computed(()=>{
+      let m = allModels.value
+      if(modelsKeyword.value){
+        const kw = modelsKeyword.value.toLowerCase()
+        m = m.filter(x=>x.model_id.toLowerCase().includes(kw)||x.model_name.toLowerCase().includes(kw)||x.provider_code.toLowerCase().includes(kw))
+      }
+      return m
+    })
+
+    const availableChannelModels = computed(()=>{
+      if(customModelForm.selection_mode === 'specific' && customModelForm.channel_id){
+        const channel = channels.value.find(c => c.id === customModelForm.channel_id)
+        if(channel && channel.models){
+          return channel.models.split(',').map(m => m.trim()).filter(m => m)
+        }
+      }
+      return []
+    })
+
+    // API Key functions
+    function openApiKeyModal(k){
+      if(k){
+        editingApiKey.value = k
+        const hasExpiry = k.expires_at && k.expires_at !== 'None'
+        Object.assign(apiKeyForm,{
+          name:k.name,
+          models:k.models||'',
+          expire_type:hasExpiry?'custom':'never',
+          expires_at:hasExpiry?k.expires_at.slice(0,16):'',
+          is_active:k.is_active
+        })
+      }else{
+        editingApiKey.value = null
+        Object.assign(apiKeyForm,{name:'',models:'',expire_type:'never',expires_at:'',is_active:true})
+      }
+      showApiKeyModal.value = true
+    }
+
+    async function saveApiKey(){
+      const data = JSON.parse(JSON.stringify(apiKeyForm))
+      // 根据expire_type处理过期时间
+      if(data.expire_type === 'never' || !data.expires_at || data.expires_at.trim() === ''){
+        data.expires_at = null
+      }
+      delete data.expire_type  // 不需要发送到后端
+      // 处理models字段，确保是字符串格式
+      if(data.models && typeof data.models === 'string'){
+        data.models = data.models.trim()
+      }
+      try{
+        if(editingApiKey.value){
+          await api('/admin/api-keys/'+editingApiKey.value.id,{method:'PUT',body:JSON.stringify(data)})
+        }else{
+          await api('/admin/api-keys',{method:'POST',body:JSON.stringify(data)})
+        }
+        showApiKeyModal.value = false
+        loadApiKeys()
+      }catch(e){alert('保存失败: '+e.message)}
+    }
+
+    async function deleteApiKey(id){
+      if(!confirm('确认删除此 API Key？')) return
+      await api('/admin/api-keys/'+id,{method:'DELETE'})
+      loadApiKeys()
+    }
+
+    async function regenerateKey(id){
+      if(!confirm('确认重新生成 Key？旧 Key 将立即失效。')) return
+      const r = await api('/admin/api-keys/'+id+'/regenerate',{method:'POST'})
+      alert('新 Key: ' + r.data.key)
+      loadApiKeys()
+    }
+
+    // Custom Model functions
+    function openCustomModelModal(m){
+      if(m){
+        editingCustomModel.value = m
+        Object.assign(customModelForm,{
+          name:m.name,model_id:m.model_id,selection_mode:m.selection_mode,
+          target_model:m.target_model||'',channel_id:m.channel_id,channel_model:m.channel_model||'',is_active:m.is_active,
+          channel_mappings:m.channel_mappings||[]
+        })
+      }else{
+        editingCustomModel.value = null
+        Object.assign(customModelForm,{name:'',model_id:'',selection_mode:'auto',target_model:'',channel_id:null,channel_model:'',is_active:true,channel_mappings:[]})
+      }
+      showCustomModelModal.value = true
+    }
+
+    function addChannelMapping(){
+      customModelForm.channel_mappings.push({channel_id:null,target_model:'',channel_model:'',weight:1})
+    }
+
+    function removeChannelMapping(index){
+      customModelForm.channel_mappings.splice(index,1)
+    }
+
+    async function saveCustomModel(){
+      const data = JSON.parse(JSON.stringify(customModelForm))
+      // 处理channel_id，确保空值时为null
+      if(data.channel_id === '' || data.channel_id === undefined){
+        data.channel_id = null
+      }
+      // 自动选择模式下清空渠道相关字段
+      if(data.selection_mode === 'auto'){
+        data.channel_id = null
+        data.channel_model = ''
+        data.channel_mappings = []
+      }else if(data.selection_mode === 'specific'){
+        data.channel_mappings = []
+      }else if(data.selection_mode === 'multi'){
+        data.channel_id = null
+        data.channel_model = ''
+      }
+      try{
+        if(editingCustomModel.value){
+          await api('/admin/custom-models/'+editingCustomModel.value.id,{method:'PUT',body:JSON.stringify(data)})
+        }else{
+          await api('/admin/custom-models',{method:'POST',body:JSON.stringify(data)})
+        }
+        showCustomModelModal.value = false
+        loadCustomModels()
+      }catch(e){alert('保存失败: '+e.message)}
+    }
+
+    async function deleteCustomModel(id){
+      if(!confirm('确认删除此自定义模型？')) return
+      await api('/admin/custom-models/'+id,{method:'DELETE'})
+      loadCustomModels()
+    }
+
+    // Channel functions
+    function openChannelModal(ch){
+      if(ch){
+        editingChannel.value = ch
+        Object.assign(channelForm,{
+          name:ch.name,provider_id:ch.provider_id,api_type:ch.api_type,
+          api_key:'',api_base:ch.api_base||'',
+          models:ch.models||'',weight:ch.weight,timeout:ch.timeout||60
+        })
+      }else{
+        editingChannel.value = null
+        Object.assign(channelForm,{name:'',provider_id:1,api_type:'openai',api_key:'',api_base:'',models:'',weight:1,timeout:60})
+      }
+      showChannelModal.value = true
+    }
+
+    async function saveChannel(){
+      const data = {...channelForm}
+      if(!data.api_key&&!editingChannel.value) return alert('请输入 API Key')
+      const body = {...data}
+      if(!editingChannel.value&&!body.api_key) return
+      if(editingChannel.value&&!body.api_key) delete body.api_key
+
+      try{
+        if(editingChannel.value){
+          await api('/admin/channels/'+editingChannel.value.id,{method:'PUT',body:JSON.stringify(body)})
+        }else{
+          await api('/admin/channels',{method:'POST',body:JSON.stringify(body)})
+        }
+        showChannelModal.value = false
+        loadChannels();loadStats()
+      }catch(e){alert('保存失败: '+e.message)}
+    }
+
+    async function deleteChannel(id){
+      if(!confirm('确认删除此渠道？')) return
+      await api('/admin/channels/'+id,{method:'DELETE'})
+      loadChannels();loadStats()
+    }
+
+    async function testChannel(id){
+      const r = await api('/admin/channels/'+id+'/test',{method:'POST'})
+      alert(JSON.stringify(r,null,2))
+      loadChannels()
+    }
+
+    async function autoConfig(id){
+      const r = await api('/admin/channels/'+id+'/auto-config',{method:'POST'})
+      alert(JSON.stringify(r,null,2))
+      loadChannels();loadStats()
+    }
+
+    async function toggleChannel(c){
+      const r = await api('/admin/channels/'+c.id+'/toggle',{method:'POST'})
+      c.status = r.data.status
+      loadChannels()
+    }
+
+    // Provider functions
+    function openProviderModal(p){
+      if(p){
+        editingProvider.value = p
+        Object.assign(providerForm,{
+          name:p.name, code:p.code, api_base:p.api_base||'',
+          website:p.website||'', description:p.description||'',
+          is_active:p.is_active
+        })
+      }else{
+        editingProvider.value = null
+        Object.assign(providerForm,{
+          name:'', code:'', api_base:'', website:'', description:'', is_active:true
+        })
+      }
+      showProviderModal.value = true
+    }
+
+    async function saveProvider(){
+      if(!providerForm.name || !providerForm.code) return alert('请填写名称和代码')
+      const data = {...providerForm}
+      try{
+        if(editingProvider.value){
+          await api('/admin/providers/'+editingProvider.value.id,{method:'PUT',body:JSON.stringify(data)})
+        }else{
+          await api('/admin/providers',{method:'POST',body:JSON.stringify(data)})
+        }
+        showProviderModal.value = false
+        loadProviders();loadStats()
+      }catch(e){alert('保存失败: '+e.message)}
+    }
+
+    async function deleteProvider(p){
+      const isBuiltin = p.is_builtin
+      if (isBuiltin) {
+        const inputName = prompt(`⚠️ 你正在删除内置提供商「${p.name}」\n此操作可能影响已关联的渠道和模型\n请输入提供商名称确认删除：`)
+        if (!inputName || inputName.trim() !== p.name) {
+          if (inputName !== null) alert('输入的名称不匹配，已取消删除')
+          return
+        }
+      } else {
+        if (!confirm(`确认删除提供商「${p.name}」？`)) return
+      }
+      try {
+        await api('/admin/providers/'+p.id,{method:'DELETE'})
+        loadProviders();loadStats()
+      } catch(e) { alert('删除失败: '+e.message) }
+    }
+
+    // Model functions
+    function openModelModal(m){
+      if(m){
+        editingModel.value = m
+        Object.assign(modelForm,{
+          model_id:m.model_id,model_name:m.model_name||'',provider_id:m.provider_id,
+          category:m.category,context_window:m.context_window||8192,
+          pricing_input:m.pricing_input||0,pricing_output:m.pricing_output||0,
+          supports_streaming:m.supports_streaming!==false,is_active:m.is_active!==false
+        })
+      }else{
+        editingModel.value = null
+        Object.assign(modelForm,{
+          model_id:'',model_name:'',provider_id:providers.value[0]?.id||'',
+          category:'text_generation',context_window:8192,pricing_input:0,pricing_output:0,
+          supports_streaming:true,is_active:true
+        })
+      }
+      showModelModal.value = true
+    }
+
+    async function saveModel(){
+      if(!modelForm.model_id) return alert('请填写模型ID')
+      const data = {...modelForm}
+      try{
+        if(editingModel.value){
+          await api('/admin/models/'+editingModel.value.id,{method:'PUT',body:JSON.stringify(data)})
+        }else{
+          await api('/admin/models',{method:'POST',body:JSON.stringify(data)})
+        }
+        showModelModal.value = false
+        loadAllModels();loadStats()
+      }catch(e){alert('保存失败: '+e.message)}
+    }
+
+    async function deleteModel(id){
+      if(!confirm('确认删除此模型？')) return
+      await api('/admin/models/'+id,{method:'DELETE'})
+      loadAllModels();loadStats()
+    }
+
+    async function loadModelsPreset(){
+      await api('/admin/presets/load-models',{method:'POST'})
+      loadPresetStatus();loadAllModels();loadStats()
+    }
+    async function loadProvidersPreset(){
+      await api('/admin/presets/load-providers',{method:'POST'})
+      loadPresetStatus();loadProviders();loadStats()
+    }
+
+    function copyToClipboard(text){
+      navigator.clipboard.writeText(text)
+    }
+
+    watch(modelsCategoryFilter,()=>loadAllModels())
+
+    onMounted(async ()=>{
+      await checkAuth()
+      if(isLoggedIn.value){
+        loadStats();loadChannels();loadProviders();loadAllModels();loadLogs();loadPresetStatus();loadCategories();loadApiKeys();loadCustomModels();loadServerInfo()
+      }
+    })
+
+    return {
+      isLoggedIn, authChecking, loginForm, loginLoading, loginError, currentUser, handleLogin, handleLogout,
+      currentNav,navItems,stats,channels,providers,allModels,logs,apiKeys,customModels,presetStatus,providerMap,
+      modelsCategoryFilter,modelsKeyword,categoryLabels,modelCategories,filteredModels,availableChannelModels,baseUrl,
+      testingRelay,relayTestResult,testRelay,selectedRelayApiKey,relayTestModel,
+      showChannelModal,editingChannel,channelForm,
+      showApiKeyModal,editingApiKey,apiKeyForm,
+      showCustomModelModal,editingCustomModel,customModelForm,
+      showProviderModal,editingProvider,providerForm,
+      showModelModal,editingModel,modelForm,
+      openChannelModal,saveChannel,deleteChannel,testChannel,autoConfig,toggleChannel,
+      openApiKeyModal,saveApiKey,deleteApiKey,regenerateKey,
+      openCustomModelModal,saveCustomModel,deleteCustomModel,addChannelMapping,removeChannelMapping,
+      openProviderModal,saveProvider,deleteProvider,
+      openModelModal,saveModel,deleteModel,
+      loadModels:loadModelsPreset,loadProviders:loadProvidersPreset,loadAllModels,
+      copyToClipboard,
+      passwordForm,passwordChanging,passwordChangeResult,resetPasswordForm,changePassword,
+      usernameForm,usernameChanging,usernameChangeResult,resetUsernameForm,changeUsername,
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>
