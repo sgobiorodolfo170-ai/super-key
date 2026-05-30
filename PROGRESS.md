@@ -79,6 +79,7 @@
 | FEAT-14 | `POST /admin/models/batch-import` 批量模型导入 | P2 | 2h | 端点 + CSV/JSON 解析 | ⬜ |
 | FEAT-15 | `GET /admin/logs/{id}` + `DELETE /admin/logs/cleanup` 日志完善 | P2 | 2h | 详情端点 + 清理端点 | ⬜ |
 | FEAT-16 | `GET /v1/realtime` WebSocket | P3 | 8h | WebSocket + OpenAI Realtime Adaptor | ⬜ |
+| FEAT-17 | 版本检测与更新功能 | P1 | 2h | `/admin/version` 接口 + 前端定时检测 + 关于页面 + 更新按钮 | ✅ |
 
 ---
 
@@ -120,6 +121,7 @@
 | ✅ ROB-08 | 健壮 | request_count 空值保护 |
 | ✅ FEAT-01 | Feature | 内置提供商编辑删除 |
 | ✅ FEAT-02 | Feature | provider 新增字段 |
+| ✅ FEAT-17 | Feature | 版本检测与更新功能 |
 
 ---
 

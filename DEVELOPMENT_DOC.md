@@ -589,6 +589,7 @@ POST /admin/login { username, password }
 | 方法 | 路径 | 功能 |
 |---|---|---|
 | GET | `/admin/health` | 健康检查 |
+| GET | `/admin/version` | 版本信息（返回 git commit hash + buildTime） |
 | GET | `/admin/server-info` | 服务信息（v2.0 新增） |
 | GET | `/admin/stats/overview` | 总览统计 |
 
@@ -970,8 +971,11 @@ bcrypt>=4.0.0
 
 **模型分类页**：分类侧边栏 + 模型列表 + 新增/编辑/删除
 
+**关于页**（v2.1）：显示当前版本号（git commit hash），检测新版本，一键更新按钮
+
 ### 9.3 前端技术
 - Vue.js 3 CDN (完整版)
 - Tailwind CSS CDN
 - 单文件 `static/admin.html`，零构建
 - Fetch API 调用 `/admin/*` + Session Token 认证
+- 版本检测：每 5 分钟请求 `/admin/version`，对比 localStorage 中的版本号，不同则提示更新
