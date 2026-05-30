@@ -109,7 +109,11 @@ select.input{appearance:auto}
         </div>
       </nav>
       <div style="border-top:1px solid #e5e7eb;padding-top:12px">
-        <div class="text-sm text-muted">{{ currentUser }}</div>
+        <div v-if="hasNewVersion" @click="handleUpdate" style="background:#3b82f6;color:white;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;text-align:center">🎉 新版本 {{newVersion}} 可用，点击更新</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div class="text-sm text-muted">{{ currentUser }}</div>
+          <div style="font-size:11px;color:#94a3b8;background:#f1f5f9;padding:2px 6px;border-radius:4px" v-if="currentVersion">v{{currentVersion}}</div>
+        </div>
         <div class="text-sm" style="color:#ef4444;cursor:pointer" @click="handleLogout">退出登录</div>
       </div>
     </div>
@@ -407,6 +411,36 @@ select.input{appearance:auto}
           </div>
           <div v-if="usernameChangeResult" class="mt-3 text-sm" :style="{color:usernameChangeResult.success?'#22c55e':'#ef4444'}">
             {{usernameChangeResult.message}}
+          </div>
+        </div>
+      </div>
+
+      <!-- About -->
+      <div v-if="currentNav === 'about'">
+        <h2 style="font-size:22px;font-weight:600;margin-bottom:16px">ℹ️ 关于</h2>
+        <div class="card" style="max-width:600px">
+          <div style="text-align:center;margin-bottom:24px">
+            <div style="font-size:48px;margin-bottom:12px">🔑</div>
+            <div style="font-size:24px;font-weight:700;color:#1e293b">Super-Key</div>
+            <div style="font-size:14px;color:#64748b;margin-top:4px">个人自用大模型聚合平台</div>
+          </div>
+          <div style="border-top:1px solid #e5e7eb;padding-top:16px">
+            <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:12px">
+              <span class="text-sm text-muted">当前版本</span>
+              <span style="font-size:13px;font-family:monospace;background:#f1f5f9;padding:4px 10px;border-radius:6px;color:#475569">{{currentVersion || '-'}}</span>
+            </div>
+            <div v-if="hasNewVersion" class="flex" style="justify-content:space-between;align-items:center;margin-bottom:12px">
+              <span class="text-sm text-muted">最新版本</span>
+              <span style="font-size:13px;font-family:monospace;background:#eff6ff;padding:4px 10px;border-radius:6px;color:#3b82f6">{{newVersion}}</span>
+            </div>
+            <div style="margin-top:16px">
+              <button v-if="hasNewVersion" @click="handleUpdate" class="btn btn-primary" style="width:100%">
+                🎉 发现新版本 {{newVersion}}，点击更新
+              </button>
+              <div v-else class="text-sm text-muted" style="text-align:center;padding:8px 0">
+                ✅ 已是最新版本
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -751,9 +785,38 @@ createApp({
       adminSessionId = ''
       isLoggedIn.value = false
       currentUser.value = ''
+      if(_versionCheckTimer) clearInterval(_versionCheckTimer)
+    }
+
+    async function checkVersion(){
+      try{
+        const res = await fetch('/admin/version?t=' + Date.now(), {cache:'no-store'})
+        if(!res.ok) return
+        const {version} = await res.json()
+        const local = localStorage.getItem('sk_app_version')
+        currentVersion.value = local || version
+        if(local && version !== local){
+          hasNewVersion.value = true
+          newVersion.value = version
+        }
+        if(!local) localStorage.setItem('sk_app_version', version)
+      }catch(e){
+        console.log('Version check failed:', e)
+      }
+    }
+
+    function handleUpdate(){
+      if(newVersion.value){
+        localStorage.setItem('sk_app_version', newVersion.value)
+      }
+      window.location.reload(true)
     }
 
     const currentNav = ref('overview')
+    const hasNewVersion = ref(false)
+    const currentVersion = ref('')
+    const newVersion = ref('')
+    let _versionCheckTimer = null
     const navItems = [
       {id:'overview',label:'概览',icon:'📊'},
       {id:'apikeys',label:'API Key',icon:'🔑'},
@@ -763,6 +826,7 @@ createApp({
       {id:'models',label:'模型',icon:'🧠'},
       {id:'logs',label:'日志',icon:'📋'},
       {id:'settings',label:'设置',icon:'⚙️'},
+      {id:'about',label:'关于',icon:'ℹ️'},
     ]
 
     const stats = reactive({channels:0,providers:0,models:0,total_requests:0,avg_latency_ms:0})
@@ -1314,11 +1378,14 @@ createApp({
       await checkAuth()
       if(isLoggedIn.value){
         loadStats();loadChannels();loadProviders();loadAllModels();loadLogs();loadPresetStatus();loadCategories();loadApiKeys();loadCustomModels();loadServerInfo()
+        checkVersion()
+        _versionCheckTimer = setInterval(checkVersion, 5*60*1000)
       }
     })
 
     return {
       isLoggedIn, authChecking, loginForm, loginLoading, loginError, currentUser, handleLogin, handleLogout,
+      hasNewVersion, currentVersion, newVersion, handleUpdate,
       currentNav,navItems,stats,channels,providers,allModels,logs,apiKeys,customModels,presetStatus,providerMap,
       modelsCategoryFilter,modelsKeyword,categoryLabels,modelCategories,filteredModels,availableChannelModels,baseUrl,
       testingRelay,relayTestResult,testRelay,selectedRelayApiKey,relayTestModel,

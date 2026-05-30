@@ -1,6 +1,7 @@
 import json
 import uuid
 import logging
+import subprocess
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import JSONResponse, HTMLResponse
@@ -36,6 +37,21 @@ STATS_CACHE_TTL = 30
 @router.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@router.get("/version")
+async def get_version():
+    try:
+        git_hash = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+    except Exception:
+        git_hash = "unknown"
+    return {
+        "version": git_hash,
+        "buildTime": datetime.now().isoformat(),
+    }
 
 
 @router.get("/server-info")
