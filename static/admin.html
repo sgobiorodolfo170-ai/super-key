@@ -56,6 +56,7 @@ select.input{appearance:auto}
 </head>
 <body>
 <div id="app">
+  <div v-if="globalError" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#ef4444;color:white;padding:10px 16px;text-align:center;font-size:14px;cursor:pointer" @click="globalError=''">{{globalError}}</div>
   <div v-if="!isLoggedIn" class="flex items-center justify-center" style="height:100vh;background:#f8fafc;">
     <div class="card" style="width:420px;padding:32px;">
       <div style="text-align:center;margin-bottom:24px;">
@@ -710,17 +711,21 @@ async function api(path, opts={}){
       const errData = await res.json()
       errMsg = errData.detail || (errData.error && errData.error.message) || res.statusText
     }catch(e){
-      errMsg = await res.text()
+      try{ errMsg = await res.text() }catch(e2){ errMsg = String(res.status) }
     }
     if(res.status === 401) {
       localStorage.removeItem('sk_admin_session')
       adminSessionId = ''
-      window.location.reload()
+      if(typeof _appSetLoggedIn === 'function'){
+        _appSetLoggedIn(false)
+      }
     }
     throw new Error(errMsg)
   }
   return res.json()
 }
+
+let _appSetLoggedIn = null
 
 createApp({
   setup(){
@@ -835,6 +840,15 @@ createApp({
       {id:'settings',label:'设置',icon:'⚙️'},
       {id:'about',label:'关于',icon:'ℹ️'},
     ]
+
+    const globalError = ref('')
+    let _globalErrorTimer = null
+
+    function showError(msg){
+      globalError.value = msg
+      if(_globalErrorTimer) clearTimeout(_globalErrorTimer)
+      _globalErrorTimer = setTimeout(()=>{ globalError.value = '' }, 5000)
+    }
 
     const stats = reactive({channels:0,providers:0,models:0,total_requests:0,avg_latency_ms:0})
     const testingRelay = ref(false)
@@ -1018,38 +1032,46 @@ createApp({
     }
 
     async function loadStats(){
-      const d = await api('/admin/stats/overview')
-      Object.assign(stats,d)
+      try{
+        const d = await api('/admin/stats/overview')
+        Object.assign(stats,d)
+      }catch(e){ showError('加载统计失败: '+e.message) }
     }
     async function loadChannels(){
-      const d = await api('/admin/channels')
-      channels.value = d.data
+      try{
+        const d = await api('/admin/channels')
+        channels.value = d.data
+      }catch(e){ showError('加载渠道失败: '+e.message) }
     }
     async function loadProviders(){
-      const d = await api('/admin/providers')
-      providers.value = d.data
-      d.data.forEach(p=>{providerMap[p.id]=p.name})
+      try{
+        const d = await api('/admin/providers')
+        providers.value = d.data
+        d.data.forEach(p=>{providerMap[p.id]=p.name})
+      }catch(e){ showError('加载提供商失败: '+e.message) }
     }
     async function loadAllModels(){
-      let url = '/admin/models'
-      const params = []
-      if(modelsCategoryFilter.value) params.push('category='+modelsCategoryFilter.value)
-      if(modelsKeyword.value) params.push('keyword='+encodeURIComponent(modelsKeyword.value))
-      if(params.length) url += '?'+params.join('&')
-      const d = await api(url)
-      allModels.value = d.data
+      try{
+        let url = '/admin/models'
+        const params = []
+        if(modelsCategoryFilter.value) params.push('category='+modelsCategoryFilter.value)
+        if(modelsKeyword.value) params.push('keyword='+encodeURIComponent(modelsKeyword.value))
+        if(params.length) url += '?'+params.join('&')
+        const d = await api(url)
+        allModels.value = d.data
+      }catch(e){ showError('加载模型失败: '+e.message) }
     }
     async function loadLogs(){
       try{
         const d = await api('/admin/logs?page_size=50')
         logs.value = d.data
-      }catch(e){ console.log('Failed to load logs:', e) }
+      }catch(e){ showError('加载日志失败: '+e.message) }
     }
     async function loadApiKeys(){
       try{
         const d = await api('/admin/api-keys')
         apiKeys.value = d.data
-      }catch(e){ console.log('Failed to load api keys:', e) }
+      }catch(e){ showError('加载API Key失败: '+e.message) }
     }
     async function loadCustomModels(){
       try{
@@ -1382,10 +1404,24 @@ createApp({
 
     watch(modelsCategoryFilter,()=>loadAllModels())
 
+    _appSetLoggedIn = (v) => { isLoggedIn.value = v; if(!v) authChecking.value = false }
+
     onMounted(async ()=>{
-      await checkAuth()
+      try{
+        await checkAuth()
+      }catch(e){
+        console.log('Auth check error:', e)
+      }
       if(isLoggedIn.value){
-        loadStats();loadChannels();loadProviders();loadAllModels();loadLogs();loadPresetStatus();loadCategories();loadApiKeys();loadCustomModels();loadServerInfo()
+        try{
+          await Promise.allSettled([
+            loadStats(), loadChannels(), loadProviders(), loadAllModels(),
+            loadLogs(), loadPresetStatus(), loadCategories(), loadApiKeys(),
+            loadCustomModels(), loadServerInfo()
+          ])
+        }catch(e){
+          console.log('Data load error:', e)
+        }
         checkVersion()
         _versionCheckTimer = setInterval(checkVersion, 5*60*1000)
       }
@@ -1393,7 +1429,7 @@ createApp({
 
     return {
       isLoggedIn, authChecking, loginForm, loginLoading, loginError, currentUser, handleLogin, handleLogout,
-      hasNewVersion, currentVersion, newVersion, handleUpdate,
+      hasNewVersion, currentVersion, newVersion, handleUpdate, globalError,
       currentNav,navItems,stats,channels,providers,allModels,logs,apiKeys,customModels,presetStatus,providerMap,
       modelsCategoryFilter,modelsKeyword,categoryLabels,modelCategories,filteredModels,availableChannelModels,baseUrl,
       testingRelay,relayTestResult,testRelay,selectedRelayApiKey,relayTestModel,

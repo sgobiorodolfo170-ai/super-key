@@ -86,7 +86,31 @@ async def global_exception_handler(request: Request, exc: Exception):
             status_code=exc.status_code,
             content={"error": {"message": exc.detail, "type": "http_error"}},
         )
-    logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, str(exc), exc_info=True)
+    
+    exc_str = str(exc)
+    exc_type = type(exc).__name__
+    
+    if "no such column" in exc_str or "OperationalError" in exc_type:
+        logger.error("Database schema error on %s %s: %s", request.method, request.url.path, exc_str)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "message": "Database schema mismatch. Please restart the server to auto-migrate.",
+                    "type": "db_schema_error",
+                    "detail": exc_str[:200]
+                }
+            },
+        )
+    
+    if "database is locked" in exc_str:
+        logger.error("Database locked on %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=503,
+            content={"error": {"message": "Database is temporarily locked. Please retry.", "type": "db_locked"}},
+        )
+    
+    logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, exc_str, exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"error": {"message": "Internal server error", "type": "internal_error"}},

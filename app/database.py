@@ -28,44 +28,24 @@ class Base(DeclarativeBase):
     pass
 
 
-_MIGRATIONS = {
-    "providers": {
-        "is_builtin": "BOOLEAN DEFAULT 1",
-        "is_active": "BOOLEAN DEFAULT 1",
-    },
-    "model_classifications": {
-        "is_builtin": "BOOLEAN DEFAULT 0",
-        "is_active": "BOOLEAN DEFAULT 1",
-    },
-    "api_keys": {
-        "is_active": "BOOLEAN DEFAULT 1",
-    },
-    "admin_users": {
-        "is_active": "BOOLEAN DEFAULT 1",
-    },
-    "custom_models": {
-        "is_active": "BOOLEAN DEFAULT 1",
-    },
-    "custom_model_channels": {
-        "is_active": "BOOLEAN DEFAULT 1",
-    },
-    "channels": {
-        "enable_auto_complete": "BOOLEAN DEFAULT 1",
-        "auto_ban": "INTEGER DEFAULT 0",
-        "model_mapping": "TEXT DEFAULT ''",
-        "extra_headers": "TEXT DEFAULT ''",
-        "extra_params": "TEXT DEFAULT ''",
-        "param_override": "TEXT DEFAULT ''",
-        "timeout": "INTEGER DEFAULT 60",
-        "max_retries": "INTEGER DEFAULT 0",
-        "test_model": "TEXT DEFAULT ''",
-    },
-    "request_logs": {
-        "is_error": "BOOLEAN DEFAULT 0",
-        "error_type": "TEXT DEFAULT ''",
-        "error_message": "TEXT DEFAULT ''",
-    },
-}
+def _get_column_type_str(col):
+    col_type = type(col.type).__name__
+    if col_type == "Boolean":
+        default_val = "1" if col.default and col.default.arg else "0"
+        return f"BOOLEAN DEFAULT {default_val}"
+    elif col_type == "Integer":
+        default_val = col.default.arg if col.default and col.default.arg is not None else 0
+        return f"INTEGER DEFAULT {default_val}"
+    elif col_type == "Float":
+        default_val = col.default.arg if col.default and col.default.arg is not None else 0.0
+        return f"FLOAT DEFAULT {default_val}"
+    elif col_type in ("String", "Text"):
+        default_val = col.default.arg if col.default and col.default.arg is not None else ""
+        return f"TEXT DEFAULT '{default_val}'"
+    elif col_type == "DateTime":
+        return "DATETIME"
+    else:
+        return f"TEXT DEFAULT ''"
 
 
 async def init_db():
@@ -75,23 +55,28 @@ async def init_db():
         if "sqlite" not in _resolved_url:
             return
 
-        def _migrate(connection):
+        def _auto_migrate(connection):
             insp = inspect(connection)
             migrated = 0
-            for table_name, columns in _MIGRATIONS.items():
+            for table_name, table_obj in Base.metadata.tables.items():
                 if not insp.has_table(table_name):
                     continue
                 existing = {col["name"] for col in insp.get_columns(table_name)}
-                for col_name, col_def in columns.items():
+                for col_name, col_obj in table_obj.columns.items():
                     if col_name not in existing:
-                        connection.execute(
-                            text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}")
-                        )
-                        migrated += 1
+                        col_def = _get_column_type_str(col_obj)
+                        try:
+                            connection.execute(
+                                text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}")
+                            )
+                            migrated += 1
+                            logger.info("Auto-migrated: ALTER TABLE %s ADD COLUMN %s %s", table_name, col_name, col_def)
+                        except Exception as e:
+                            logger.warning("Migration failed for %s.%s: %s", table_name, col_name, e)
             if migrated:
-                logger.info("Auto-migrated %d column(s) in existing tables", migrated)
+                logger.info("Auto-migrated %d column(s) total", migrated)
 
-        await conn.run_sync(_migrate)
+        await conn.run_sync(_auto_migrate)
 
 
 async def get_session():

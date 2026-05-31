@@ -152,6 +152,11 @@
 | ✅ DEPLOY-04 | 部署 | 创建.env.example配置模板并提交 |
 | ✅ DEPLOY-05 | 部署 | data/目录添加.gitkeep确保被git跟踪 |
 | ✅ DEPLOY-06 | 部署 | 添加vercel.json配置，README说明SQLite不兼容Serverless |
+| ✅ FIX-12 | Bug修复 | 前端api() 401死循环(reload→设置isLoggedIn=false回到登录页) |
+| ✅ FIX-13 | Bug修复 | onMounted数据加载时序错误(await checkAuth后+Promise.allSettled容错) |
+| ✅ DEPLOY-07 | 部署 | init_db()自动迁移改为从SQLAlchemy模型定义检测所有列(不再硬编码) |
+| ✅ ROB-11 | 健壮 | 全局异常区分db_schema_error和db_locked返回友好信息 |
+| ✅ ROB-12 | 健壮 | 前端loadXxx全部添加try-catch+全局错误提示(红色横幅5秒消失) |
 
 ---
 
@@ -160,13 +165,13 @@
 | 类别 | 已完成 | 剩余 + 未开始 | 总计 |
 |---|---|---|---|
 | 性能优化 | 17.5h | 0.5h (1 任务: WAL) | 18h |
-| 健壮性 | 9h | 2.5h (3 任务) | 11.5h |
-| Bug修复 | 12h | 0h | 12h |
+| 健壮性 | 12h | 2h (2 任务) | 14h |
+| Bug修复 | 16h | 0h | 16h |
 | 安全加固 | 4h | 0h | 4h |
 | Feature 开发 | 3h | 32h (14 任务) | 35h |
 | 架构优化 | 0h | 43h (11 任务) | 43h |
-| 部署修复 | 6h | 0h | 6h |
-| **合计** | **51.5h** | **78h** | **129.5h** |
+| 部署修复 | 7h | 0h | 7h |
+| **合计** | **59.5h** | **77.5h** | **137h** |
 
 ---
 
