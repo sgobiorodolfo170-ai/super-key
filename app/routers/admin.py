@@ -16,7 +16,7 @@ from app.models.ability import Ability
 from app.models.model_classification import ModelClassification
 from app.models.request_log import RequestLog
 from app.models.admin_user import AdminUser
-from app.middleware.auth import verify_admin_token, admin_sessions
+from app.middleware.auth import verify_admin_token, admin_sessions, admin_sessions_lock
 from app.services.provider_service import ProviderService
 from app.services.channel_service import ChannelService
 from app.services.preset_service import PresetService
@@ -71,18 +71,11 @@ async def stats_overview(_=Depends(verify_admin_token)):
             return STATS_CACHE
 
     async with async_session() as session:
-        import asyncio
-
-        async def _count(table):
-            return await session.scalar(select(func.count()).select_from(table))
-
-        channel_count, provider_count, model_count, total_requests, avg_latency = await asyncio.gather(
-            _count(Channel),
-            _count(Provider),
-            _count(ModelClassification),
-            _count(RequestLog),
-            session.scalar(select(func.avg(RequestLog.latency_ms)).where(RequestLog.latency_ms > 0)),
-        )
+        channel_count = await session.scalar(select(func.count()).select_from(Channel))
+        provider_count = await session.scalar(select(func.count()).select_from(Provider))
+        model_count = await session.scalar(select(func.count()).select_from(ModelClassification))
+        total_requests = await session.scalar(select(func.count()).select_from(RequestLog))
+        avg_latency = await session.scalar(select(func.avg(RequestLog.latency_ms)).where(RequestLog.latency_ms > 0))
 
         result = {
             "channels": channel_count or 0,
@@ -141,7 +134,7 @@ async def list_channels(_=Depends(verify_admin_token)):
         data = []
         for c in channels:
             model_list = [m.strip() for m in c.models.split(",") if m.strip()] if c.models else []
-            data.append({"id": c.id, "name": c.name, "provider_id": c.provider_id, "api_type": c.api_type, "models": c.models, "model_count": len(model_list), "weight": c.weight, "priority": c.priority, "status": c.status, "response_time": c.response_time, "total_requests": c.total_requests, "last_test_time": str(c.last_test_time) if c.last_test_time else None, "enable_auto_complete": c.enable_auto_complete, "remark": c.remark})
+            data.append({"id": c.id, "name": c.name, "provider_id": c.provider_id, "api_type": c.api_type, "api_base": c.api_base or "", "models": c.models, "model_count": len(model_list), "weight": c.weight, "priority": c.priority, "status": c.status, "response_time": c.response_time, "total_requests": c.total_requests, "last_test_time": str(c.last_test_time) if c.last_test_time else None, "enable_auto_complete": c.enable_auto_complete, "remark": c.remark})
         return {"data": data}
 
 
@@ -153,11 +146,11 @@ CHANNEL_FIELDS = {
 }
 
 MODEL_FIELDS = {
-    "model_id", "model_name", "provider_id", "provider_code", "category",
+    "model_id", "model_name", "provider_code", "category",
     "description", "context_window", "max_output_tokens",
     "pricing_input", "pricing_output", "supports_streaming",
     "supports_vision", "supports_function_calling", "supports_tools",
-    "is_active", "is_deprecated", "sort_order", "release_date"
+    "is_active", "is_builtin", "is_deprecated", "sort_order", "release_date"
 }
 
 PROVIDER_FIELDS = {
@@ -324,6 +317,8 @@ async def list_models_admin(category: str = "", provider_code: str = "", keyword
                 "supports_streaming": m.supports_streaming,
                 "supports_vision": m.supports_vision,
                 "is_deprecated": m.is_deprecated,
+                "is_builtin": m.is_builtin or False,
+                "is_active": m.is_active if m.is_active is not None else True,
             } for m in models]
         }
 
@@ -341,7 +336,7 @@ async def create_model(data: dict, _=Depends(verify_admin_token)):
         model = ModelClassification(
             model_id=data.get("model_id"),
             model_name=data.get("model_name", ""),
-            provider_id=data.get("provider_id"),
+            provider_code=data.get("provider_code", ""),
             category=data.get("category", "text_generation"),
             context_window=data.get("context_window", 8192),
             pricing_input=data.get("pricing_input", 0),
@@ -602,11 +597,12 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
         session_id = str(uuid.uuid4())
         expires_at = datetime.now() + timedelta(hours=24)
         
-        admin_sessions[session_id] = {
-            "user_id": user.id,
-            "username": user.username,
-            "expires_at": expires_at
-        }
+        async with admin_sessions_lock:
+            admin_sessions[session_id] = {
+                "user_id": user.id,
+                "username": user.username,
+                "expires_at": expires_at
+            }
         
         return {"success": True, "session_id": session_id, "username": user.username}
 
@@ -614,34 +610,33 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
 @router.post("/logout")
 async def admin_logout(request: Request):
     session_id = request.headers.get("X-Session-Id", "")
-    if session_id in admin_sessions:
-        del admin_sessions[session_id]
+    async with admin_sessions_lock:
+        if session_id in admin_sessions:
+            del admin_sessions[session_id]
     return {"success": True}
 
 
 @router.get("/auth/check")
 async def check_auth(request: Request):
     session_id = request.headers.get("X-Session-Id", "")
-    if session_id not in admin_sessions:
-        return {"authenticated": False}
-    
-    session = admin_sessions[session_id]
-    if session["expires_at"] < datetime.now():
-        del admin_sessions[session_id]
-        return {"authenticated": False}
-    
-    session["expires_at"] = datetime.now() + timedelta(hours=24)
-    return {"authenticated": True, "username": session["username"]}
+    async with admin_sessions_lock:
+        if session_id not in admin_sessions:
+            return {"authenticated": False}
+        
+        session = admin_sessions[session_id]
+        if session["expires_at"] < datetime.now():
+            del admin_sessions[session_id]
+            return {"authenticated": False}
+        
+        session["expires_at"] = datetime.now() + timedelta(hours=24)
+        return {"authenticated": True, "username": session["username"]}
 
 
 @router.post("/change-password")
 async def change_password(data: dict, request: Request, _=Depends(verify_admin_token)):
-    session_id = request.headers.get("X-Session-Id", "")
-    if session_id not in admin_sessions:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    session = admin_sessions[session_id]
-    user_id = session["user_id"]
+    user_id = getattr(request.state, "admin_user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated via session")
     
     old_password = data.get("old_password")
     new_password = data.get("new_password")
@@ -665,12 +660,9 @@ async def change_password(data: dict, request: Request, _=Depends(verify_admin_t
 
 @router.post("/change-username")
 async def change_username(data: dict, request: Request, _=Depends(verify_admin_token)):
-    session_id = request.headers.get("X-Session-Id", "")
-    if session_id not in admin_sessions:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    session = admin_sessions[session_id]
-    user_id = session["user_id"]
+    user_id = getattr(request.state, "admin_user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated via session")
     
     new_username = data.get("new_username")
     password = data.get("password")

@@ -53,6 +53,12 @@ class ApiKeyService:
             if "models" in data and isinstance(data["models"], list):
                 data["models"] = ",".join(data["models"])
 
+            if "expires_at" in data and isinstance(data["expires_at"], str):
+                try:
+                    data["expires_at"] = datetime.fromisoformat(data["expires_at"].replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    data["expires_at"] = None
+
             for key, value in data.items():
                 if key != "key":
                     setattr(api_key, key, value)

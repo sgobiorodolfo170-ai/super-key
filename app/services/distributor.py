@@ -6,6 +6,7 @@ from app.database import async_session
 from app.models.channel import Channel
 from app.models.ability import Ability
 from app.models.custom_model import CustomModel
+from app.models.custom_model_channel import CustomModelChannel
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +31,29 @@ class Distributor:
 
             if custom_model:
                 if custom_model.selection_mode == "specific" and custom_model.channel_id:
-                    # 指定渠道模式：优先使用渠道模型名，否则使用目标模型，最后使用原始模型名
                     actual_model = custom_model.channel_model or custom_model.target_model or model
                     return (actual_model, custom_model.channel_id)
+                elif custom_model.selection_mode == "multi":
+                    result2 = await session.execute(
+                        select(CustomModelChannel)
+                        .where(CustomModelChannel.custom_model_id == custom_model.id, CustomModelChannel.is_active == True)
+                    )
+                    mappings = result2.scalars().all()
+                    active_mappings = [m for m in mappings if m.channel_id]
+                    if active_mappings:
+                        total_weight = sum(m.weight for m in active_mappings)
+                        rand_val = random.random() * total_weight
+                        current_weight = 0
+                        selected = active_mappings[0]
+                        for mapping in active_mappings:
+                            current_weight += mapping.weight
+                            if rand_val <= current_weight:
+                                selected = mapping
+                                break
+                        actual_model = selected.channel_model or selected.target_model or model
+                        return (actual_model, selected.channel_id)
+                    return (custom_model.target_model or model, None)
                 else:
-                    # 自动选择模式：使用目标模型或原始模型名
                     return (custom_model.target_model or model, None)
 
             return (model, None)

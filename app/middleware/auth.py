@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
+import asyncio
 import logging
 from fastapi import Request, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update, func
 
 from app.config import settings
 from app.database import async_session
@@ -10,6 +11,7 @@ from app.models.api_key import ApiKey
 logger = logging.getLogger(__name__)
 
 admin_sessions = {}
+admin_sessions_lock = asyncio.Lock()
 
 
 async def verify_api_token(request: Request):
@@ -48,8 +50,11 @@ async def verify_api_token(request: Request):
         request.state.api_key = key_obj
         request.state.allowed_models = allowed_models
 
-        key_obj.last_used_at = datetime.now()
-        key_obj.request_count = (key_obj.request_count or 0) + 1
+        await session.execute(
+            update(ApiKey)
+            .where(ApiKey.id == key_obj.id)
+            .values(last_used_at=datetime.now(), request_count=func.coalesce(ApiKey.request_count, 0) + 1)
+        )
         await session.commit()
 
 
@@ -60,18 +65,22 @@ async def verify_admin_token(request: Request):
     2. 会话认证 X-Session-Id
     """
     session_id = request.headers.get("X-Session-Id", "")
-    if session_id and session_id in admin_sessions:
-        session = admin_sessions[session_id]
-        if session["expires_at"] < datetime.now():
-            del admin_sessions[session_id]
-            logger.info("Admin session expired: session_id=%s...", session_id[:8])
-            raise HTTPException(status_code=401, detail="Session expired")
-        session["expires_at"] = datetime.now() + timedelta(hours=24)
-        request.state.admin_user = session["username"]
-        return
+    if session_id:
+        async with admin_sessions_lock:
+            if session_id in admin_sessions:
+                session = admin_sessions[session_id]
+                if session["expires_at"] < datetime.now():
+                    del admin_sessions[session_id]
+                    logger.info("Admin session expired: session_id=%s...", session_id[:8])
+                    raise HTTPException(status_code=401, detail="Session expired")
+                session["expires_at"] = datetime.now() + timedelta(hours=24)
+                request.state.admin_user = session["username"]
+                request.state.admin_user_id = session["user_id"]
+                return
 
     token = request.headers.get("X-Admin-Token", "")
     if token == settings.admin_token:
+        request.state.admin_user = "admin"
         return
 
     raise HTTPException(status_code=401, detail="Invalid admin token")

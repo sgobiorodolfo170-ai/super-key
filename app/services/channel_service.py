@@ -1,5 +1,6 @@
 import json
 import time
+import asyncio
 import logging
 from datetime import datetime
 import httpx
@@ -30,34 +31,43 @@ class ChannelService:
     @staticmethod
     async def _probe_api(base_url: str, api_key: str) -> dict:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
-            try:
-                resp = await client.get(
-                    f"{base_url}/v1/models",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    models = [m["id"] for m in data.get("data", [])]
-                    return {"api_type": "openai", "models": models, "detected": "openai_compatible", "model_count": len(models)}
-            except Exception as e:
-                logger.warning("OpenAI-compatible probe failed for %s: %s", base_url, e)
+            async def probe_openai():
+                try:
+                    resp = await client.get(
+                        f"{base_url}/v1/models",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        models = [m["id"] for m in data.get("data", [])]
+                        return {"api_type": "openai", "models": models, "detected": "openai_compatible", "model_count": len(models)}
+                except Exception as e:
+                    logger.warning("OpenAI-compatible probe failed for %s: %s", base_url, e)
+                return None
 
-            try:
-                resp = await client.get(
-                    f"{base_url}/v1beta/models?key={api_key}",
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    models = []
-                    for m in data.get("models", []):
-                        name = m.get("name", "")
-                        if "/" in name:
-                            models.append(name.split("/")[-1])
-                        else:
-                            models.append(name)
-                    return {"api_type": "gemini", "models": models, "detected": "gemini", "model_count": len(models)}
-            except Exception as e:
-                logger.warning("Gemini probe failed for %s: %s", base_url, e)
+            async def probe_gemini():
+                try:
+                    resp = await client.get(
+                        f"{base_url}/v1beta/models?key={api_key}",
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        models = []
+                        for m in data.get("models", []):
+                            name = m.get("name", "")
+                            if "/" in name:
+                                models.append(name.split("/")[-1])
+                            else:
+                                models.append(name)
+                        return {"api_type": "gemini", "models": models, "detected": "gemini", "model_count": len(models)}
+                except Exception as e:
+                    logger.warning("Gemini probe failed for %s: %s", base_url, e)
+                return None
+
+            results = await asyncio.gather(probe_openai(), probe_gemini())
+            for result in results:
+                if result:
+                    return result
 
             logger.info("API probe for %s: unknown format", base_url)
             return {"api_type": "custom", "models": [], "detected": "unknown", "model_count": 0}
@@ -115,7 +125,7 @@ class ChannelService:
         async with async_session() as session:
             from sqlalchemy import delete
             await session.execute(delete(Ability).where(Ability.channel_id == channel_id))
-            for model in models:
-                ability = Ability(channel_id=channel_id, model=model, enabled=True)
-                session.add(ability)
+            if models:
+                abilities = [Ability(channel_id=channel_id, model=model, enabled=True) for model in models]
+                session.add_all(abilities)
             await session.commit()

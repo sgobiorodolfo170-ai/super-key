@@ -23,12 +23,14 @@ async def _cleanup_expired_sessions():
     while True:
         await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
         from datetime import datetime
-        expired = [
-            sid for sid, s in list(admin_sessions.items())
-            if s["expires_at"] < datetime.now()
-        ]
-        for sid in expired:
-            del admin_sessions[sid]
+        from app.middleware.auth import admin_sessions_lock
+        async with admin_sessions_lock:
+            expired = [
+                sid for sid, s in list(admin_sessions.items())
+                if s["expires_at"] < datetime.now()
+            ]
+            for sid in expired:
+                del admin_sessions[sid]
         if expired:
             logger.debug("Cleaned up %d expired admin sessions", len(expired))
 
@@ -36,6 +38,20 @@ async def _cleanup_expired_sessions():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Super-Key starting up...")
+    
+    # 安全检查：拒绝默认弱密钥
+    insecure_configs = []
+    if settings.api_token == "sk-super-key-change-me":
+        insecure_configs.append("SUPER_KEY_API_TOKEN")
+    if settings.admin_token == "admin-change-me":
+        insecure_configs.append("SUPER_KEY_ADMIN_TOKEN or ADMIN_TOKEN")
+    if settings.encryption_key == "super-key-32-byte-encryption-key!":
+        insecure_configs.append("SUPER_KEY_ENCRYPTION_KEY")
+    
+    if insecure_configs:
+        logger.warning("⚠️  SECURITY WARNING: Using default insecure values for: %s", ", ".join(insecure_configs))
+        logger.warning("⚠️  Please set strong random values in environment variables before production deployment!")
+    
     await init_db()
     await PresetService.load_all_if_empty()
 

@@ -653,8 +653,8 @@ select.input{appearance:auto}
       </div>
       <div class="mb-3">
         <label class="text-sm text-muted">提供商</label>
-        <select class="input" v-model="modelForm.provider_id">
-          <option v-for="p in providers" :key="p.id" :value="p.id">{{p.name}}</option>
+        <select class="input" v-model="modelForm.provider_code">
+          <option v-for="p in providers" :key="p.id" :value="p.code">{{p.name}}</option>
         </select>
       </div>
       <div class="mb-3">
@@ -705,13 +705,19 @@ async function api(path, opts={}){
   }
   const res = await fetch(path, {...opts, headers})
   if(!res.ok) {
-    const err = await res.text()
+    let errMsg = res.statusText
+    try{
+      const errData = await res.json()
+      errMsg = errData.detail || (errData.error && errData.error.message) || res.statusText
+    }catch(e){
+      errMsg = await res.text()
+    }
     if(res.status === 401) {
       localStorage.removeItem('sk_admin_session')
       adminSessionId = ''
       window.location.reload()
     }
-    throw new Error(err)
+    throw new Error(errMsg)
   }
   return res.json()
 }
@@ -781,6 +787,7 @@ createApp({
     }
 
     function handleLogout(){
+      try{ api('/admin/logout',{method:'POST'}) }catch(e){}
       localStorage.removeItem('sk_admin_session')
       adminSessionId = ''
       isLoggedIn.value = false
@@ -876,7 +883,7 @@ createApp({
     const showModelModal = ref(false)
     const editingModel = ref(null)
     const modelForm = reactive({
-      model_id:'',model_name:'',provider_id:'',category:'text_generation',
+      model_id:'',model_name:'',provider_code:'',category:'text_generation',
       context_window:8192,pricing_input:0,pricing_output:0,supports_streaming:true,is_active:true
     })
 
@@ -1027,6 +1034,7 @@ createApp({
       let url = '/admin/models'
       const params = []
       if(modelsCategoryFilter.value) params.push('category='+modelsCategoryFilter.value)
+      if(modelsKeyword.value) params.push('keyword='+encodeURIComponent(modelsKeyword.value))
       if(params.length) url += '?'+params.join('&')
       const d = await api(url)
       allModels.value = d.data
@@ -1035,19 +1043,19 @@ createApp({
       try{
         const d = await api('/admin/logs?page_size=50')
         logs.value = d.data
-      }catch(e){}
+      }catch(e){ console.log('Failed to load logs:', e) }
     }
     async function loadApiKeys(){
       try{
         const d = await api('/admin/api-keys')
         apiKeys.value = d.data
-      }catch(e){}
+      }catch(e){ console.log('Failed to load api keys:', e) }
     }
     async function loadCustomModels(){
       try{
         const d = await api('/admin/custom-models')
         customModels.value = d.data
-      }catch(e){}
+      }catch(e){ console.log('Failed to load custom models:', e) }
     }
     async function loadPresetStatus(){
       const d = await api('/admin/presets/status')
@@ -1063,8 +1071,8 @@ createApp({
     async function loadServerInfo(){
       try{
         const res = await api('/admin/server-info')
-        if(res.data && res.data.public_url){
-          serverPublicUrl.value = res.data.public_url
+        if(res.public_url){
+          serverPublicUrl.value = res.public_url
         }
       }catch(e){
         console.log('Failed to load server info:', e)
@@ -1323,7 +1331,7 @@ createApp({
       if(m){
         editingModel.value = m
         Object.assign(modelForm,{
-          model_id:m.model_id,model_name:m.model_name||'',provider_id:m.provider_id,
+          model_id:m.model_id,model_name:m.model_name||'',provider_code:m.provider_code||'',
           category:m.category,context_window:m.context_window||8192,
           pricing_input:m.pricing_input||0,pricing_output:m.pricing_output||0,
           supports_streaming:m.supports_streaming!==false,is_active:m.is_active!==false
@@ -1331,7 +1339,7 @@ createApp({
       }else{
         editingModel.value = null
         Object.assign(modelForm,{
-          model_id:'',model_name:'',provider_id:providers.value[0]?.id||'',
+          model_id:'',model_name:'',provider_code:providers.value[0]?.code||'',
           category:'text_generation',context_window:8192,pricing_input:0,pricing_output:0,
           supports_streaming:true,is_active:true
         })

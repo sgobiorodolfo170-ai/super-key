@@ -9,7 +9,12 @@ if _db_path.startswith("./"):
     _db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), _db_path[2:])
 os.makedirs(os.path.dirname(_db_path), exist_ok=True)
 
-engine = create_async_engine(settings.database_url, echo=False)
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    pool_pre_ping=True,
+    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {}
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

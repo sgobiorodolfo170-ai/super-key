@@ -22,6 +22,8 @@ class ModelClassification(Base):
     supports_tools = Column(Boolean, default=False)
     release_date = Column(String(20), default="")
     is_deprecated = Column(Boolean, default=False)
+    is_builtin = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

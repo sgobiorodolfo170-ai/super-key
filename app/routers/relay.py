@@ -44,7 +44,14 @@ CATEGORY_LABELS = {
 
 @router.post("/chat/completions")
 async def chat_completions(request: Request):
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            {"error": {"message": "Invalid JSON body", "type": "invalid_request_error"}},
+            status_code=400
+        )
     return await RelayService.relay_chat(request, body)
 
 

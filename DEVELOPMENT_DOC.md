@@ -979,3 +979,18 @@ bcrypt>=4.0.0
 - 单文件 `static/admin.html`，零构建
 - Fetch API 调用 `/admin/*` + Session Token 认证
 - 版本检测：每 5 分钟请求 `/admin/version`，对比 localStorage 中的版本号，不同则提示更新
+- api() 错误处理：解析 JSON 错误响应（detail/error.message），显示可读消息
+
+### 9.4 安全机制
+- 管理员密码：首次启动从环境变量 `SUPER_KEY_DEFAULT_ADMIN_PASSWORD` 读取，未设置则随机生成
+- 弱密钥检测：启动时检查 api_token/admin_token/encryption_key 是否为默认值，使用则警告
+- Session 并发安全：`admin_sessions` 字典操作使用 `asyncio.Lock` 保护
+- 退出登录：前端调用 `/admin/logout` 通知后端删除 session
+- API Key 统计更新：使用 SQL 原子操作 `UPDATE ... SET request_count = COALESCE(request_count, 0) + 1` 避免竞态
+
+### 9.5 性能优化
+- RequestLog 表索引：model、channel_id、is_error 字段添加索引
+- 批量插入：sync_abilities 使用 `session.add_all()` 替代循环 `session.add()`
+- 批量删除：channel_mappings 使用 SQL `DELETE WHERE` 替代循环 `session.delete()`
+- 并行网络探测：OpenAI/Gemini 探测使用 `asyncio.gather()` 并行执行
+- 数据库连接池：配置 `pool_pre_ping=True` 和 `check_same_thread=False`

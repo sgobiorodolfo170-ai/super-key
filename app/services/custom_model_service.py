@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 import random
 from app.database import async_session
@@ -66,20 +66,23 @@ class CustomModelService:
                 setattr(custom_model, key, value)
             
             if channel_mappings is not None:
-                for mapping in custom_model.channel_mappings:
-                    await session.delete(mapping)
+                await session.execute(
+                    delete(CustomModelChannel).where(CustomModelChannel.custom_model_id == custom_model.id)
+                )
                 
-                for mapping in channel_mappings:
-                    if mapping.get('channel_id'):
-                        channel_mapping = CustomModelChannel(
-                            custom_model_id=custom_model.id,
-                            channel_id=mapping.get('channel_id'),
-                            target_model=mapping.get('target_model', ''),
-                            channel_model=mapping.get('channel_model', ''),
-                            weight=mapping.get('weight', 1),
-                            is_active=True
-                        )
-                        session.add(channel_mapping)
+                new_mappings = [
+                    CustomModelChannel(
+                        custom_model_id=custom_model.id,
+                        channel_id=m.get('channel_id'),
+                        target_model=m.get('target_model', ''),
+                        channel_model=m.get('channel_model', ''),
+                        weight=m.get('weight', 1),
+                        is_active=True
+                    )
+                    for m in channel_mappings if m.get('channel_id')
+                ]
+                if new_mappings:
+                    session.add_all(new_mappings)
             
             await session.commit()
             await session.refresh(custom_model)

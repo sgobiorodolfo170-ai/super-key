@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     encryption_key: str = "super-key-32-byte-encryption-key!"
     admin_token: str = "admin-change-me"
     log_level: str = "INFO"
+    default_admin_password: str = ""  # 默认管理员密码，必须通过环境变量设置
 
     model_config = {"env_prefix": "SUPER_KEY_", "env_file": ".env", "extra": "allow"}
 

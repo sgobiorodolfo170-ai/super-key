@@ -96,6 +96,7 @@ class RelayService:
             except Exception as e:
                 request.state.log_is_error = True
                 request.state.log_error_message = str(e)[:500]
+                logger.exception("Stream error: model=%s channel=%d", model, channel.id if channel else 0)
                 yield f"data: {json.dumps({'error': {'message': str(e), 'type': 'stream_error'}})}\n\n"
                 yield "data: [DONE]\n\n"
 
@@ -124,4 +125,5 @@ class RelayService:
         except Exception as e:
             request.state.log_is_error = True
             request.state.log_error_message = str(e)[:500]
+            logger.exception("Non-stream error: model=%s channel=%d", model, channel.id if channel else 0)
             return JSONResponse({"error": {"message": str(e), "type": "upstream_error"}}, status_code=502)

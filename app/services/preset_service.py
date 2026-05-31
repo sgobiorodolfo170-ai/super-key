@@ -1,11 +1,13 @@
 import json
 import os
 import logging
+import secrets
 from sqlalchemy import select, func
 from app.database import async_session
 from app.models.provider import Provider
 from app.models.model_classification import ModelClassification
 from app.models.admin_user import AdminUser
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -83,11 +85,14 @@ class PresetService:
 
     @staticmethod
     async def create_default_admin(session=None):
+        password = settings.default_admin_password or secrets.token_urlsafe(16)
+        username = "admin"
+        
         if session is None:
             async with async_session() as session:
                 admin_user = AdminUser(
-                    username="super",
-                    password_hash=AdminUser.hash_password("key_888"),
+                    username=username,
+                    password_hash=AdminUser.hash_password(password),
                     email="admin@example.com",
                     is_active=True
                 )
@@ -95,13 +100,18 @@ class PresetService:
                 await session.commit()
         else:
             admin_user = AdminUser(
-                username="super",
-                password_hash=AdminUser.hash_password("key_888"),
+                username=username,
+                password_hash=AdminUser.hash_password(password),
                 email="admin@example.com",
                 is_active=True
             )
             session.add(admin_user)
             await session.commit()
+        
+        if not settings.default_admin_password:
+            logger.warning("Default admin password generated: %s (set SUPER_KEY_DEFAULT_ADMIN_PASSWORD to customize)", password)
+        else:
+            logger.info("Default admin created with configured password")
 
     @staticmethod
     def _get_builtin_providers():

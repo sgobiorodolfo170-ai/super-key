@@ -122,6 +122,28 @@
 | ✅ FEAT-01 | Feature | 内置提供商编辑删除 |
 | ✅ FEAT-02 | Feature | provider 新增字段 |
 | ✅ FEAT-17 | Feature | 版本检测与更新功能 |
+| ✅ FIX-01 | Bug修复 | 前端server-info数据解析错误 |
+| ✅ FIX-02 | Bug修复 | ModelClassification字段不匹配(provider_id→provider_code, is_builtin, is_active) |
+| ✅ FIX-03 | Bug修复 | list_channels不返回api_base字段 |
+| ✅ FIX-04 | Bug修复 | Distributor不支持multi模式自定义模型 |
+| ✅ FIX-05 | Bug修复 | 前端退出不调用后端logout(session安全风险) |
+| ✅ FIX-06 | Bug修复 | request_count并发竞态条件(改用SQL原子更新) |
+| ✅ FIX-07 | Bug修复 | expires_at字符串转datetime类型失败 |
+| ✅ FIX-08 | Bug修复 | api()错误信息显示原始JSON不可读 |
+| ✅ FIX-09 | Bug修复 | modelsKeyword不传给后端(全量请求) |
+| ✅ FIX-10 | Bug修复 | loadXxx静默吞错误 |
+| ✅ FIX-11 | Bug修复 | X-Admin-Token无法修改密码(双重验证不一致) |
+| ✅ SEC-01 | 安全 | 移除硬编码默认密码，改为环境变量或随机生成 |
+| ✅ SEC-02 | 安全 | 启动时检查默认弱密钥并警告 |
+| ✅ SEC-03 | 安全 | admin_sessions添加asyncio.Lock并发保护 |
+| ✅ PERF-09 | 性能 | sync_abilities批量插入替代循环插入 |
+| ✅ PERF-10 | 性能 | channel_mappings批量删除替代循环删除 |
+| ✅ PERF-11 | 性能 | RequestLog表添加索引(model,channel_id,is_error) |
+| ✅ PERF-12 | 性能 | 网络探测并行化(asyncio.gather) |
+| ✅ PERF-13 | 性能 | 异常日志记录完整堆栈(logger.exception) |
+| ✅ PERF-14 | 性能 | 数据库连接池配置(pool_pre_ping) |
+| ✅ ROB-09 | 健壮 | relay.py JSON解析异常捕获返回400 |
+| ✅ ROB-10 | 健壮 | stats_overview修复asyncio.gather与SQLAlchemy冲突 |
 
 ---
 
