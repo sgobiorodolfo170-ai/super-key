@@ -181,6 +181,9 @@
 | ✅ ROB-12 | 健壮 | 前端loadXxx全部添加try-catch+全局错误提示(红色横幅5秒消失) |
 | ✅ PERF-24 | 性能 | admin_sessions从内存dict改为SQLite持久化(支持多worker) |
 | ✅ PERF-25 | 性能 | uvicorn多worker支持(workers=4) |
+| ✅ FIX-27 | Bug修复 | 流式SSE心跳行(:开头)被丢弃导致代理超时断开 |
+| ✅ FIX-28 | Bug修复 | 上游[DONE]可能被重复发送 |
+| ✅ PERF-26 | 性能 | keepalive_expiry从5s调整为30s，避免连接过早回收 |
 
 ---
 

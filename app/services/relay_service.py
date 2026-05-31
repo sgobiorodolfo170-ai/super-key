@@ -18,7 +18,7 @@ def _get_http_client() -> httpx.AsyncClient:
     if _http_client is None or _http_client.is_closed:
         _http_client = httpx.AsyncClient(
             timeout=httpx.Timeout(60.0, connect=10.0),
-            limits=httpx.Limits(max_connections=100, max_keepalive_connections=10, keepalive_expiry=5),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20, keepalive_expiry=30),
         )
     return _http_client
 
@@ -105,8 +105,13 @@ class RelayService:
                     async for line in resp.aiter_lines():
                         if not line:
                             continue
+                        if line.startswith(":"):
+                            yield line + "\n\n"
+                            continue
                         if line.startswith("data: "):
                             chunk = line[6:]
+                            if chunk.strip() == "[DONE]":
+                                continue
                             converted = adaptor.convert_stream_chunk(chunk)
                             if converted and isinstance(converted, dict):
                                 usage = converted.get("usage", {})
