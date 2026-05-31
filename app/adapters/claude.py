@@ -9,7 +9,10 @@ class ClaudeAdaptor(BaseAdaptor):
 
     def build_request_url(self, channel, request_model, endpoint):
         base = (channel.api_base or "https://api.anthropic.com").rstrip("/")
-        return f"{base}/v1/messages"
+        suffix = "/v1/messages"
+        if base.endswith("/v1") and suffix.startswith("/v1/"):
+            suffix = suffix[3:]
+        return f"{base}{suffix}"
 
     def build_headers(self, channel, original_headers=None):
         return {

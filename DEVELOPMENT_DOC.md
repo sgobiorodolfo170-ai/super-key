@@ -1,8 +1,8 @@
 # Super-Key 项目开发文档
 
-> **版本：v2.0** | 最后更新：2026-05-15 | 状态：开发中
+> **版本：v2.1** | 最后更新：2026-05-31 | 状态：开发中
 >
-> 本版本相比 v1.0 新增了多 API Key 管理、Admin 用户登录、自定义模型路由等模块，并调整了部分架构设计。
+> 本版本相比 v2.0 新增了零开销中转优化（连接池复用、认证缓存、日志批量写、纯ASGI中间件、多Worker）、URL路径去重、前端复制按钮修复、API Key模型来源修正等。
 
 ---
 
@@ -52,7 +52,7 @@
 | Admin 用户系统 | `models/admin_user.py` | 从简单 Header Token 升级为 session + bcrypt 登录 |
 | 自定义模型路由 | `models/custom_model.py`, `models/custom_model_channel.py`, `services/custom_model_service.py` | 用户需要自定义模型名 + 指定渠道映射 |
 | 全局异常处理 | `main.py` | 生产环境兜底，避免 raw traceback 泄露 |
-| Session 后台清理 | `main.py` | 防止 admin_sessions 内存泄漏 |
+| Session 后台清理 | `main.py` | 定时清理过期 AdminSession 记录 |
 | `/v1/models/categories` | `routers/relay.py` | ChatBox/CherryStudio 等客户端依赖分类端点 |
 
 以下模块当前偏离 v1.0 设计（已识别，纳入后续迭代）：
@@ -119,10 +119,12 @@
 POST /v1/chat/completions  (Authorization: Bearer sk-xxx)
   │
   ├─ 1. CORS 中间件
-  ├─ 2. TokenAuth 中间件
-  │     └─ 查询 api_keys 表 → 验证 Bearer Token → 存入 request.state
+  ├─ 2. RequestLog 中间件 (纯ASGI，响应后批量写日志)
+  ├─ 3. TokenAuth 中间件
+  │     └─ 缓存(10s TTL) → 查询 api_keys 表 → 验证 Bearer Token → 存入 request.state
+  │     └─ 用量统计批量写(30s间隔，避免每次UPDATE)
   │     └─ request.state.allowed_models → API Key 权限模型列表
-  ├─ 3. 路由处理器 chat_completions()
+  ├─ 4. 路由处理器 chat_completions()
   │     ├─ 解析请求体 JSON
   │     ├─ 提取 model 字段
   │     ├─ 校验 allowed_models（非空则过滤）
@@ -132,14 +134,16 @@ POST /v1/chat/completions  (Authorization: Bearer sk-xxx)
   │     │   ├─ selection_mode == "auto" → 返回 (目标模型, None)
   │     │   └─ 未匹配 → 返回 (原始model, None)
   │     ├─ Distributor.select_channel(actual_model, channel_id)
+  │     │   ├─ 缓存(5s TTL)命中 → 直接返回
   │     │   ├─ 指定渠道 → 直接验证 channel.status==1
-  │     │   ├─ 自动选择 → Channel.models LIKE %model% + status==1
+  │     │   ├─ 自动选择 → Ability 表 JOIN + status==1
   │     │   ├─ 按 priority(低值优先) + weight(加权随机) 选择
-  │     │   ├─ Fallback: Ability 表 JOIN 查询
   │     │   └─ 无匹配 → ChannelNotFoundError → 404
   │     ├─ RelayService.relay_chat()
   │     │   ├─ decrypt_api_key(channel.api_key) → Fernet 解密
   │     │   ├─ AdaptorRegistry.get(channel.api_type) → 适配器
+  │     │   ├─ build_request_url → 智能去重/v1路径
+  │     │   ├─ 全局httpx.AsyncClient连接池复用(keepalive=5s)
   │     │   ├─ stream=true:
   │     │   │   ├─ adaptor.build_request_url() + build_headers()
   │     │   │   ├─ adaptor.convert_chat_request() → 转换
@@ -150,9 +154,8 @@ POST /v1/chat/completions  (Authorization: Bearer sk-xxx)
   │     │       ├─ httpx.post() → 完整响应
   │     │       ├─ adaptor.convert_chat_response() → 转换
   │     │       └─ JSONResponse → 返回
-  │     └─ 返回响应
-  ├─ 4. RequestLog 中间件 (after response)
-  │     └─ 记录: request_id, channel_id, model, latency, tokens
+   │     └─ 返回响应
+   └─ (RequestLog已在纯ASGI中间件中批量写入，不阻塞响应)
   └─ 5. 全局异常处理 (兜底)
         └─ HTTPException → 原样返回 / Exception → 500
 ```
@@ -224,7 +227,7 @@ super-key/
 │   │
 │   ├── middleware/              # FastAPI 中间件
 │   │   ├── __init__.py
-│   │   ├── auth.py              # Bearer Token 认证 + admin_sessions
+│   │   ├── auth.py              # Bearer Token 认证 + AdminSession(SQLite)
 │   │   └── request_log.py       # 请求日志记录
 │   │
 │   └── utils/                   # 工具模块
@@ -539,12 +542,12 @@ class AdminUser(Base):
 POST /admin/login { username, password }
   → 查 admin_users → verify_password()
   → 生成 UUID session_id + 2小时过期
-  → 存入 admin_sessions 字典
-  → 返回 { token: session_id }
+   → 存入 admin_sessions SQLite表(跨worker共享)
+   → 返回 { token: session_id }
 
 后续 /admin/* 请求:
-  → verify_admin_token → 从 admin_sessions 查 session_id
-  → 验证未过期 → 允许请求
+   → verify_admin_token → 从 AdminSession SQLite表查 session_id
+   → 验证未过期 → 允许请求
 ```
 
 默认账号：`super` / `key_888`（首次启动自动创建）
@@ -986,7 +989,7 @@ bcrypt>=4.0.0
 ### 9.4 安全机制
 - 管理员密码：首次启动从环境变量 `SUPER_KEY_DEFAULT_ADMIN_PASSWORD` 读取，未设置则随机生成
 - 弱密钥检测：启动时检查 api_token/admin_token/encryption_key 是否为默认值，使用则警告
-- Session 并发安全：`admin_sessions` 字典操作使用 `asyncio.Lock` 保护
+- Session 持久化：`admin_sessions` 使用 SQLite AdminSession 表存储，支持多 worker 跨进程共享
 - 退出登录：前端调用 `/admin/logout` 通知后端删除 session
 - API Key 统计更新：使用 SQL 原子操作 `UPDATE ... SET request_count = COALESCE(request_count, 0) + 1` 避免竞态
 

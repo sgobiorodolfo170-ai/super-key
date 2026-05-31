@@ -5,7 +5,7 @@ import subprocess
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import JSONResponse, HTMLResponse
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, delete
 import os
 
 from app.database import async_session
@@ -16,7 +16,8 @@ from app.models.ability import Ability
 from app.models.model_classification import ModelClassification
 from app.models.request_log import RequestLog
 from app.models.admin_user import AdminUser
-from app.middleware.auth import verify_admin_token, admin_sessions, admin_sessions_lock
+from app.models.admin_session import AdminSession
+from app.middleware.auth import verify_admin_token
 from app.services.provider_service import ProviderService
 from app.services.channel_service import ChannelService
 from app.services.preset_service import PresetService
@@ -597,12 +598,14 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
         session_id = str(uuid.uuid4())
         expires_at = datetime.now() + timedelta(hours=24)
         
-        async with admin_sessions_lock:
-            admin_sessions[session_id] = {
-                "user_id": user.id,
-                "username": user.username,
-                "expires_at": expires_at
-            }
+        sess = AdminSession(
+            session_id=session_id,
+            user_id=user.id,
+            username=user.username,
+            expires_at=expires_at,
+        )
+        session.add(sess)
+        await session.commit()
         
         return {"success": True, "session_id": session_id, "username": user.username}
 
@@ -610,26 +613,32 @@ async def admin_login(username: str = Form(...), password: str = Form(...)):
 @router.post("/logout")
 async def admin_logout(request: Request):
     session_id = request.headers.get("X-Session-Id", "")
-    async with admin_sessions_lock:
-        if session_id in admin_sessions:
-            del admin_sessions[session_id]
+    if session_id:
+        async with async_session() as session:
+            await session.execute(delete(AdminSession).where(AdminSession.session_id == session_id))
+            await session.commit()
     return {"success": True}
 
 
 @router.get("/auth/check")
 async def check_auth(request: Request):
     session_id = request.headers.get("X-Session-Id", "")
-    async with admin_sessions_lock:
-        if session_id not in admin_sessions:
+    if not session_id:
+        return {"authenticated": False}
+    async with async_session() as session:
+        result = await session.execute(
+            select(AdminSession).where(AdminSession.session_id == session_id)
+        )
+        sess = result.scalar_one_or_none()
+        if not sess:
             return {"authenticated": False}
-        
-        session = admin_sessions[session_id]
-        if session["expires_at"] < datetime.now():
-            del admin_sessions[session_id]
+        if sess.expires_at < datetime.now():
+            await session.execute(delete(AdminSession).where(AdminSession.session_id == session_id))
+            await session.commit()
             return {"authenticated": False}
-        
-        session["expires_at"] = datetime.now() + timedelta(hours=24)
-        return {"authenticated": True, "username": session["username"]}
+        sess.expires_at = datetime.now() + timedelta(hours=24)
+        await session.commit()
+        return {"authenticated": True, "username": sess.username}
 
 
 @router.post("/change-password")
@@ -689,6 +698,12 @@ async def change_username(data: dict, request: Request, _=Depends(verify_admin_t
         user.username = new_username
         await session_db.commit()
     
-    admin_sessions[session_id]["username"] = new_username
+    session_id = request.headers.get("X-Session-Id", "")
+    if session_id:
+        async with async_session() as session:
+            await session.execute(
+                update(AdminSession).where(AdminSession.session_id == session_id).values(username=new_username)
+            )
+            await session.commit()
     
     return {"success": True, "message": "Username changed successfully", "old_username": old_username, "new_username": new_username}

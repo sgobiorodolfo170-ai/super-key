@@ -9,6 +9,7 @@ from app.services.channel_service import ChannelService
 from app.services.custom_model_service import CustomModelService
 from app.models.model_classification import ModelClassification
 from app.models.custom_model import CustomModel
+from app.models.channel import Channel
 from app.database import async_session
 from sqlalchemy import select
 
@@ -46,8 +47,7 @@ CATEGORY_LABELS = {
 async def chat_completions(request: Request):
     try:
         body = await request.json()
-    except Exception as e:
-        from fastapi.responses import JSONResponse
+    except Exception:
         return JSONResponse(
             {"error": {"message": "Invalid JSON body", "type": "invalid_request_error"}},
             status_code=400
@@ -60,24 +60,19 @@ async def list_models(request: Request):
     allowed_models = getattr(request.state, "allowed_models", [])
 
     async with async_session() as session:
-        result = await session.execute(select(ModelClassification).order_by(ModelClassification.sort_order))
-        models = result.scalars().all()
-
         custom_result = await session.execute(select(CustomModel).where(CustomModel.is_active == True))
         custom_models = custom_result.scalars().all()
 
-        data = []
+        channel_result = await session.execute(select(Channel.models).where(Channel.status == 1))
+        channel_model_set = set()
+        for row in channel_result:
+            if row and row[0]:
+                for m in row[0].split(","):
+                    t = m.strip()
+                    if t:
+                        channel_model_set.add(t)
 
-        for m in models:
-            if allowed_models and m.model_id not in allowed_models:
-                continue
-            data.append({
-                "id": m.model_id,
-                "object": "model",
-                "created": 0,
-                "owned_by": m.provider_code,
-                "type": "builtin",
-            })
+        data = []
 
         for cm in custom_models:
             if allowed_models and cm.model_id not in allowed_models:
@@ -89,6 +84,20 @@ async def list_models(request: Request):
                 "owned_by": "custom",
                 "type": "custom",
                 "name": cm.name,
+            })
+
+        custom_model_ids = {cm.model_id for cm in custom_models}
+        for model_id in sorted(channel_model_set):
+            if model_id in custom_model_ids:
+                continue
+            if allowed_models and model_id not in allowed_models:
+                continue
+            data.append({
+                "id": model_id,
+                "object": "model",
+                "created": 0,
+                "owned_by": "channel",
+                "type": "channel",
             })
 
         return {"object": "list", "data": data}

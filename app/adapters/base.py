@@ -9,7 +9,7 @@ class BaseAdaptor(ABC):
         ...
 
     @abstractmethod
-    def build_headers(self, channel, original_headers: dict) -> dict:
+    def build_headers(self, channel, original_headers: dict | None = None) -> dict:
         ...
 
     @abstractmethod

@@ -110,7 +110,8 @@ class ChannelService:
                     channel.last_test_time = datetime.now()
                     if resp.status_code == 200:
                         channel.status = 1
-                        await session.commit()
+                    await session.commit()
+                    if resp.status_code == 200:
                         logger.info("Channel %d test success: model=%s, latency=%dms", channel_id, test_model, int(elapsed))
                         return {"success": True, "model": test_model, "response_time_ms": int(elapsed), "status_code": resp.status_code}
                     else:

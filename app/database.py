@@ -2,7 +2,7 @@ import os
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, event
 
 from app.config import settings
 
@@ -15,12 +15,31 @@ os.makedirs(os.path.dirname(_db_path), exist_ok=True)
 
 _resolved_url = f"sqlite+aiosqlite:///{_db_path}"
 
+_connect_args = {}
+if "sqlite" in _resolved_url:
+    _connect_args = {"check_same_thread": False}
+
 engine = create_async_engine(
     _resolved_url,
     echo=False,
     pool_pre_ping=True,
-    connect_args={"check_same_thread": False} if "sqlite" in _resolved_url else {}
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=300,
+    connect_args=_connect_args,
 )
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragmas(dbapi_conn, connection_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA cache_size=-64000")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
+
+
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -41,7 +60,8 @@ def _get_column_type_str(col):
         return f"FLOAT DEFAULT {default_val}"
     elif col_type in ("String", "Text"):
         default_val = col.default.arg if col.default and col.default.arg is not None else ""
-        return f"TEXT DEFAULT '{default_val}'"
+        escaped_val = str(default_val).replace("'", "''")
+        return f"TEXT DEFAULT '{escaped_val}'"
     elif col_type == "DateTime":
         return "DATETIME"
     else:
@@ -50,6 +70,7 @@ def _get_column_type_str(col):
 
 async def init_db():
     async with engine.begin() as conn:
+
         await conn.run_sync(Base.metadata.create_all)
 
         if "sqlite" not in _resolved_url:

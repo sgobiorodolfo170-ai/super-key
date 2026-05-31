@@ -54,7 +54,9 @@
 |---|---|---|---|
 | 渠道匹配从 `LIKE %model%` 迁移到 Ability 表 JOIN | 解决假匹配问题 | 4h | ✅ |
 | 非流式路径添加异常重试 | `relay_service.py` `_relay_non_stream` | 3h | ⬜ |
-| SQLite WAL 模式开启 | `database.py` `engine.execution_options` | 0.5h | ⬜ |
+| SQLite WAL 模式开启 | `database.py` 每连接PRAGMA event | 0.5h | ✅ |
+| 中转零开销优化 | httpx连接池复用+认证缓存+日志批量写+ASGI中间件+4workers | 4h | ✅ |
+| URL路径去重 | adapter build_request_url智能去重/v1 | 0.5h | ✅ |
 
 ---
 
@@ -134,7 +136,7 @@
 | 问题 | 方案 |
 |---|---|
 | admin_sessions 不跨 worker 共享 | Redis / SQLite 持久化 session |
-| SQLite 写锁瓶颈 | WAL 模式 + 连接池优化 / 切换到 PostgreSQL（可选） |
+| SQLite 写锁瓶颈 | ✅ WAL模式 + 连接池 + 批量写已优化 / 切换PostgreSQL（可选） |
 | Fernet 密钥缓存 | 每个 worker 独立缓存，无影响 |
 
 ### L4.3 自动熔断与健康检查
@@ -169,9 +171,9 @@
 
 ```
 当前  ──────►    S1.3   ──────►    S3.5   ──────►   L4.3
-LIKE匹配        Ability        SSE工具          熔断+健康检查
-N+1查询         JOIN            批量预加载        加权响应时间
-                               非流式重试         SQLite WAL
+✅Ability JOIN   ✅零开销中转     SSE工具          熔断+健康检查
+✅连接池复用     ✅WAL+批量写     批量预加载        加权响应时间
+✅认证/渠道缓存  ✅4workers      非流式重试        
 ```
 
 ### 5.2 安全加固路线
@@ -219,3 +221,4 @@ dict满天飞      回归保障       OpenAPI文档        第三方适配器
 | 非流式重试 | ❌ | ✅ | ✅ | ✅ |
 | Rate Limit | ❌ | ❌ | ✅ | ✅ |
 | WebSocket | ❌ | ❌ | ❌ | ✅ |
+| 中转额外开销 | ~3000ms (4x) | ~22ms (1.03x) | ~22ms | ~10ms |

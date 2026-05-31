@@ -159,16 +159,7 @@ select.input{appearance:auto}
             </select>
             <select class="input" v-model="relayTestModel" style="width:280px">
               <option value="">选择测试模型</option>
-              <optgroup label="自定义模型">
-                <option v-for="m in customModels" :key="m.id" :value="m.model_id">{{m.model_id}}</option>
-              </optgroup>
-              <optgroup label="常用模型">
-                <option value="gpt-4o">gpt-4o</option>
-                <option value="gpt-4o-mini">gpt-4o-mini</option>
-                <option value="gpt-4">gpt-4</option>
-                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022</option>
-              </optgroup>
+              <option v-for="m in customModels" :key="m.id" :value="m.model_id">{{m.model_id}}</option>
             </select>
             <button class="btn btn-primary" @click="testRelay" :disabled="testingRelay || !selectedRelayApiKey || !relayTestModel">
               {{testingRelay ? '测试中...' : '中转测试'}}
@@ -196,7 +187,7 @@ select.input{appearance:auto}
                   <span class="font-medium" style="font-family:monospace">{{k.full_key}}</span>
                   <span class="copy-btn" @click="copyToClipboard(k.full_key)">复制</span>
                 </td>
-                <td><span class="text-sm">{{k.models || '全部'}}</span></td>
+                <td><span class="text-sm">{{k.models || allAvailableModels.join(', ') || '全部'}}</span></td>
                 <td><span :class="['badge',k.is_active?'badge-green':'badge-red']">{{k.is_active?'启用':'禁用'}}</span></td>
                 <td>{{k.request_count}}</td>
                 <td class="text-sm">{{k.last_used_at?k.last_used_at.slice(0,19):'-'}}</td>
@@ -459,7 +450,13 @@ select.input{appearance:auto}
       </div>
       <div class="mb-3">
         <label class="text-sm text-muted">允许访问的模型 (留空=全部，逗号分隔)</label>
-        <textarea class="input" v-model="apiKeyForm.models" placeholder="gpt-4o,claude-3-sonnet"></textarea>
+        <textarea class="input" v-model="apiKeyForm.models" placeholder="留空允许所有模型，或逗号分隔指定模型"></textarea>
+        <div v-if="allAvailableModels.length" class="mt-1" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto">
+          <span class="text-sm text-muted">可用模型:</span>
+          <span v-for="m in allAvailableModels" :key="m" @click="apiKeyForm.models = (apiKeyForm.models.trim() ? apiKeyForm.models.trim()+',' : '') + m"
+                style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px;cursor:pointer;white-space:nowrap"
+                :title="'点击添加: '+m">{{m}}</span>
+        </div>
       </div>
       <div class="mb-3">
         <label class="text-sm text-muted">过期时间</label>
@@ -1129,6 +1126,22 @@ createApp({
       return []
     })
 
+    const allChannelModels = computed(()=>{
+      const s = new Set()
+      channels.value.forEach(c => {
+        if(c.models){
+          c.models.split(',').forEach(m => { const t = m.trim(); if(t) s.add(t) })
+        }
+      })
+      return [...s].sort()
+    })
+
+    const allAvailableModels = computed(()=>{
+      const s = new Set(allChannelModels.value)
+      customModels.value.forEach(cm => { if(cm.model_id) s.add(cm.model_id) })
+      return [...s].sort()
+    })
+
     // API Key functions
     function openApiKeyModal(k){
       if(k){
@@ -1399,7 +1412,15 @@ createApp({
     }
 
     function copyToClipboard(text){
-      navigator.clipboard.writeText(text)
+      if(navigator.clipboard && window.isSecureContext){
+        navigator.clipboard.writeText(text)
+      }else{
+        const ta=document.createElement('textarea')
+        ta.value=text;ta.style.position='fixed';ta.style.left='-9999px'
+        document.body.appendChild(ta);ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
     }
 
     watch(modelsCategoryFilter,()=>loadAllModels())
@@ -1431,7 +1452,7 @@ createApp({
       isLoggedIn, authChecking, loginForm, loginLoading, loginError, currentUser, handleLogin, handleLogout,
       hasNewVersion, currentVersion, newVersion, handleUpdate, globalError,
       currentNav,navItems,stats,channels,providers,allModels,logs,apiKeys,customModels,presetStatus,providerMap,
-      modelsCategoryFilter,modelsKeyword,categoryLabels,modelCategories,filteredModels,availableChannelModels,baseUrl,
+      modelsCategoryFilter,modelsKeyword,categoryLabels,modelCategories,filteredModels,availableChannelModels,allChannelModels,allAvailableModels,baseUrl,
       testingRelay,relayTestResult,testRelay,selectedRelayApiKey,relayTestModel,
       showChannelModal,editingChannel,channelForm,
       showApiKeyModal,editingApiKey,apiKeyForm,

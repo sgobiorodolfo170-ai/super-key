@@ -7,6 +7,8 @@ class OpenAIAdaptor(BaseAdaptor):
 
     def build_request_url(self, channel, request_model, endpoint):
         base = (channel.api_base or (channel.provider.api_base if channel.provider else "")).rstrip("/")
+        if base.endswith("/v1") and endpoint.startswith("/v1/"):
+            return f"{base}{endpoint[3:]}"
         return f"{base}{endpoint}"
 
     def build_headers(self, channel, original_headers=None):

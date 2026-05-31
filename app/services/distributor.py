@@ -1,5 +1,6 @@
 import random
 import logging
+import time
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 from app.database import async_session
@@ -10,6 +11,10 @@ from app.models.custom_model_channel import CustomModelChannel
 
 logger = logging.getLogger(__name__)
 
+_custom_model_cache: dict[str, tuple[float, tuple[str, int | None] | None]] = {}
+_channel_cache: dict[str, tuple[float, list]] = {}
+_cache_ttl = 5.0
+
 
 class ChannelNotFoundError(Exception):
     pass
@@ -19,10 +24,13 @@ class Distributor:
 
     @staticmethod
     async def resolve_model(model: str) -> tuple[str, int | None]:
-        """
-        解析模型名称，返回 (实际模型名, 渠道ID)
-        如果是自定义模型，返回其配置的目标模型和渠道
-        """
+        now = time.time()
+        cached = _custom_model_cache.get(model)
+        if cached and (now - cached[0]) < _cache_ttl:
+            result = cached[1]
+            if result is not None:
+                return result
+
         async with async_session() as session:
             result = await session.execute(
                 select(CustomModel).where(CustomModel.model_id == model, CustomModel.is_active == True)
@@ -32,7 +40,9 @@ class Distributor:
             if custom_model:
                 if custom_model.selection_mode == "specific" and custom_model.channel_id:
                     actual_model = custom_model.channel_model or custom_model.target_model or model
-                    return (actual_model, custom_model.channel_id)
+                    resolved = (actual_model, custom_model.channel_id)
+                    _custom_model_cache[model] = (now, resolved)
+                    return resolved
                 elif custom_model.selection_mode == "multi":
                     result2 = await session.execute(
                         select(CustomModelChannel)
@@ -51,26 +61,47 @@ class Distributor:
                                 selected = mapping
                                 break
                         actual_model = selected.channel_model or selected.target_model or model
-                        return (actual_model, selected.channel_id)
-                    return (custom_model.target_model or model, None)
+                        resolved = (actual_model, selected.channel_id)
+                        _custom_model_cache[model] = (now, resolved)
+                        return resolved
+                    resolved = (custom_model.target_model or model, None)
+                    _custom_model_cache[model] = (now, resolved)
+                    return resolved
                 else:
-                    return (custom_model.target_model or model, None)
+                    resolved = (custom_model.target_model or model, None)
+                    _custom_model_cache[model] = (now, resolved)
+                    return resolved
 
+            _custom_model_cache[model] = (now, None)
             return (model, None)
 
     @staticmethod
     async def select_channel(model: str, specific_channel_id: int | None = None) -> Channel:
-        """
-        选择渠道
-        - 如果指定了 specific_channel_id，则直接返回该渠道
-        - 否则按优先级+权重自动选择
-        """
         if specific_channel_id:
             async with async_session() as session:
-                channel = await session.get(Channel, specific_channel_id)
+                stmt = select(Channel).options(selectinload(Channel.provider)).where(Channel.id == specific_channel_id)
+                result = await session.execute(stmt)
+                channel = result.scalar_one_or_none()
                 if channel and channel.status == 1:
                     return channel
                 raise ChannelNotFoundError(f"Channel {specific_channel_id} not available")
+
+        now = time.time()
+        cached = _channel_cache.get(model)
+        if cached and (now - cached[0]) < _cache_ttl:
+            channels = cached[1]
+            if channels:
+                min_priority = min(c.priority for c in channels)
+                candidates = [c for c in channels if c.priority == min_priority]
+                total_weight = sum(max(c.weight, 1) for c in candidates)
+                rand = random.randint(1, max(total_weight, 1))
+                cumulative = 0
+                for c in candidates:
+                    cumulative += max(c.weight, 1)
+                    if rand <= cumulative:
+                        return c
+                return candidates[-1]
+            raise ChannelNotFoundError(f"No channel supports model: {model}")
 
         async with async_session() as session:
             stmt = (
@@ -80,7 +111,9 @@ class Distributor:
                 .where(and_(Ability.model == model, Ability.enabled == True, Channel.status == 1))
             )
             result = await session.execute(stmt)
-            channels = result.unique().scalars().all()
+            channels = list(result.unique().scalars().all())
+
+            _channel_cache[model] = (now, channels)
 
             if not channels:
                 raise ChannelNotFoundError(f"No channel supports model: {model}")

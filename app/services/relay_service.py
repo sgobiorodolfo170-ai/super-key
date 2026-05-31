@@ -1,5 +1,6 @@
 import json
 import logging
+
 import httpx
 from fastapi import Request
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -8,6 +9,25 @@ from app.services.distributor import Distributor, ChannelNotFoundError
 from app.utils.crypto import decrypt_api_key
 
 logger = logging.getLogger(__name__)
+
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=10, keepalive_expiry=5),
+        )
+    return _http_client
+
+
+async def close_http_client():
+    global _http_client
+    if _http_client and not _http_client.is_closed:
+        await _http_client.aclose()
+        _http_client = None
 
 
 class RelayService:
@@ -43,33 +63,38 @@ class RelayService:
         adaptor = AdaptorRegistry.get(channel.api_type)
 
         api_key = decrypt_api_key(channel.api_key)
-        channel.api_key = api_key
 
-        request_body = body.copy()
-        request_body["model"] = actual_model
+        upstream_body = body.copy()
+        upstream_body["model"] = actual_model
 
         upstream_url = adaptor.build_request_url(channel, actual_model, RelayService.CHAT_ENDPOINT)
         upstream_headers = adaptor.build_headers(channel)
-        upstream_body = adaptor.convert_chat_request(channel, request_body)
+        upstream_body = adaptor.convert_chat_request(channel, upstream_body)
+
+        for hdr_key, hdr_val in upstream_headers.items():
+            if hdr_key.lower() == "authorization":
+                upstream_headers[hdr_key] = f"Bearer {api_key}"
+            elif hdr_key.lower() == "x-api-key":
+                upstream_headers[hdr_key] = api_key
 
         is_stream = body.get("stream", False)
 
+        client = _get_http_client()
         timeout = httpx.Timeout(channel.timeout or 60.0, connect=10.0)
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            if is_stream:
-                return await RelayService._handle_stream(request, client, upstream_url, upstream_headers, upstream_body, adaptor, actual_model, channel)
-            else:
-                return await RelayService._handle_non_stream(request, client, upstream_url, upstream_headers, upstream_body, adaptor, actual_model, channel)
+        if is_stream:
+            return await RelayService._handle_stream(request, client, upstream_url, upstream_headers, upstream_body, adaptor, actual_model, channel, timeout)
+        else:
+            return await RelayService._handle_non_stream(request, client, upstream_url, upstream_headers, upstream_body, adaptor, actual_model, channel, timeout)
 
     @staticmethod
-    async def _handle_stream(request: Request, client, url, headers, body, adaptor, model, channel):
+    async def _handle_stream(request: Request, client, url, headers, body, adaptor, model, channel, timeout):
         output_tokens = 0
         
         async def generate():
             nonlocal output_tokens
             try:
-                async with client.stream("POST", url, headers=headers, json=body) as resp:
+                async with client.stream("POST", url, headers=headers, json=body, timeout=timeout) as resp:
                     if resp.status_code >= 400:
                         error_text = await resp.aread()
                         request.state.log_is_error = True
@@ -103,9 +128,9 @@ class RelayService:
         return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})
 
     @staticmethod
-    async def _handle_non_stream(request: Request, client, url, headers, body, adaptor, model, channel):
+    async def _handle_non_stream(request: Request, client, url, headers, body, adaptor, model, channel, timeout):
         try:
-            resp = await client.post(url, headers=headers, json=body)
+            resp = await client.post(url, headers=headers, json=body, timeout=timeout)
             if resp.status_code >= 400:
                 logger.warning("Upstream error: url=%s model=%s status=%d body=%s",
                                url, model, resp.status_code, resp.text[:200])

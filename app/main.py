@@ -9,9 +9,11 @@ from fastapi.staticfiles import StaticFiles
 from app.database import init_db
 from app.config import settings
 from app.services.preset_service import PresetService
+from app.services.relay_service import close_http_client
 from app.utils.logger import setup_logger
 from app.routers import relay, admin
-from app.middleware.auth import admin_sessions
+
+from app.middleware.request_log import RequestLogMiddleware
 
 setup_logger(level=settings.log_level)
 logger = logging.getLogger("super-key")
@@ -23,16 +25,18 @@ async def _cleanup_expired_sessions():
     while True:
         await asyncio.sleep(SESSION_CLEANUP_INTERVAL)
         from datetime import datetime
-        from app.middleware.auth import admin_sessions_lock
-        async with admin_sessions_lock:
-            expired = [
-                sid for sid, s in list(admin_sessions.items())
-                if s["expires_at"] < datetime.now()
-            ]
-            for sid in expired:
-                del admin_sessions[sid]
-        if expired:
-            logger.debug("Cleaned up %d expired admin sessions", len(expired))
+        from app.models.admin_session import AdminSession
+        from sqlalchemy import delete
+        try:
+            async with async_session() as session:
+                result = await session.execute(
+                    delete(AdminSession).where(AdminSession.expires_at < datetime.now())
+                )
+                await session.commit()
+                if result.rowcount:
+                    logger.debug("Cleaned up %d expired admin sessions", result.rowcount)
+        except Exception:
+            pass
 
 
 @asynccontextmanager
@@ -60,11 +64,17 @@ async def lifespan(app: FastAPI):
     logger.info("Super-Key startup complete")
     yield
 
+
     cleanup_task.cancel()
     try:
         await cleanup_task
     except asyncio.CancelledError:
         pass
+    from app.middleware.request_log import _flush_logs
+    from app.middleware.auth import _flush_usage_batch
+    await _flush_logs()
+    await _flush_usage_batch()
+    await close_http_client()
     logger.info("Super-Key shut down")
 
 
@@ -76,6 +86,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestLogMiddleware)
 
 
 @app.exception_handler(Exception)

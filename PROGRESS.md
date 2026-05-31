@@ -39,7 +39,7 @@
 | PERF-08 | `list_logs` subquery COUNT → 直接 COUNT | `app/routers/admin.py` | P1 | 0.5h | `select(func.count()).select_from(RequestLog).where(...)` | ✅ |
 | PERF-09 | 渠道匹配从 `Channel.models LIKE %model%` 迁移到 Ability JOIN | `app/services/distributor.py` | P1 | 4h | `select(Channel).join(Ability).where(Ability.model==model)` 为主路径 | ✅ |
 | PERF-10 | 渠道探测 OpenAI/Gemini 并行化 | `app/services/channel_service.py` | P2 | 1.5h | `asyncio.gather` 并行探测 | ✅ |
-| PERF-11 | SQLite 开启 WAL 模式 | `app/database.py` | P2 | 0.5h | `pragma journal_mode=wal` | ⬜ |
+| PERF-11 | SQLite 开启 WAL 模式 | `app/database.py` | P2 | 0.5h | `pragma journal_mode=wal` + synchronous=NORMAL + 每连接PRAGMA | ✅ |
 
 ---
 
@@ -144,6 +144,28 @@
 | ✅ PERF-12 | 性能 | 网络探测并行化(asyncio.gather) |
 | ✅ PERF-13 | 性能 | 异常日志记录完整堆栈(logger.exception) |
 | ✅ PERF-14 | 性能 | 数据库连接池配置(pool_pre_ping) |
+| ✅ PERF-15 | 性能 | httpx.AsyncClient 连接池复用(消除每次请求新建/销毁) |
+| ✅ PERF-16 | 性能 | API Key 认证结果缓存(10s TTL，避免每次查DB) |
+| ✅ PERF-17 | 性能 | 渠道选择结果缓存(5s TTL，避免每次查DB) |
+| ✅ PERF-18 | 性能 | 请求日志批量写入(2s间隔，避免每次INSERT+COMMIT) |
+| ✅ PERF-19 | 性能 | API Key 用量统计批量写入(30s间隔，避免每次UPDATE+COMMIT) |
+| ✅ PERF-20 | 性能 | RequestLogMiddleware 改为纯ASGI(消除BaseHTTPMiddleware body拷贝) |
+| ✅ PERF-21 | 性能 | uvicorn 4 workers(多进程并行处理) |
+| ✅ PERF-22 | 性能 | SQLite 每连接PRAGMA(engine sync event) |
+| ✅ PERF-23 | 性能 | 移除debug timing代码、优化uuid生成 |
+| ✅ FIX-14 | Bug修复 | admin.py change_username 未定义session_id(NameError) |
+| ✅ FIX-15 | Bug修复 | base.py build_headers 签名与子类不一致(TypeError) |
+| ✅ FIX-16 | Bug修复 | distributor.py select_channel 未加载provider关系(AttributeError) |
+| ✅ FIX-17 | Bug修复 | relay_service.py 修改ORM对象导致明文API Key泄漏风险 |
+| ✅ FIX-18 | Bug修复 | database.py SQL注入风险(字符串默认值单引号未转义) |
+| ✅ FIX-19 | Bug修复 | auth.py token认证未设置admin_user_id |
+| ✅ FIX-20 | Bug修复 | channel_service.py test_channel失败时response_time未提交 |
+| ✅ FIX-21 | Bug修复 | crypto.py _fernet_lock声明但未使用 |
+| ✅ FIX-22 | Bug修复 | 前端复制按钮失效(navigator.clipboard非安全上下文) |
+| ✅ FIX-23 | Bug修复 | URL路径重复拼接(api_base含/v1 + endpoint含/v1 → /v1/v1/) |
+| ✅ FIX-24 | Bug修复 | /v1/models返回预设模型而非渠道+自定义模型 |
+| ✅ FIX-25 | Bug修复 | API Key允许模型为空时显示预设模型而非渠道模型 |
+| ✅ FIX-26 | Bug修复 | 测试模型选择框含硬编码常用模型(应仅来自自定义模型) |
 | ✅ ROB-09 | 健壮 | relay.py JSON解析异常捕获返回400 |
 | ✅ ROB-10 | 健壮 | stats_overview修复asyncio.gather与SQLAlchemy冲突 |
 | ✅ DEPLOY-01 | 部署 | .gitignore排除db文件，git rm --cached移除 |
@@ -157,6 +179,8 @@
 | ✅ DEPLOY-07 | 部署 | init_db()自动迁移改为从SQLAlchemy模型定义检测所有列(不再硬编码) |
 | ✅ ROB-11 | 健壮 | 全局异常区分db_schema_error和db_locked返回友好信息 |
 | ✅ ROB-12 | 健壮 | 前端loadXxx全部添加try-catch+全局错误提示(红色横幅5秒消失) |
+| ✅ PERF-24 | 性能 | admin_sessions从内存dict改为SQLite持久化(支持多worker) |
+| ✅ PERF-25 | 性能 | uvicorn多worker支持(workers=4) |
 
 ---
 
@@ -164,14 +188,14 @@
 
 | 类别 | 已完成 | 剩余 + 未开始 | 总计 |
 |---|---|---|---|
-| 性能优化 | 17.5h | 0.5h (1 任务: WAL) | 18h |
+| 性能优化 | 26h | 0h | 26h |
 | 健壮性 | 12h | 2h (2 任务) | 14h |
-| Bug修复 | 16h | 0h | 16h |
+| Bug修复 | 28h | 0h | 28h |
 | 安全加固 | 4h | 0h | 4h |
 | Feature 开发 | 3h | 32h (14 任务) | 35h |
 | 架构优化 | 0h | 43h (11 任务) | 43h |
 | 部署修复 | 7h | 0h | 7h |
-| **合计** | **59.5h** | **77.5h** | **137h** |
+| **合计** | **80h** | **77h** | **157h** |
 
 ---
 
