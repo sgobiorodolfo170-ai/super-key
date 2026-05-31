@@ -32,13 +32,13 @@
 | PERF-01 | PBKDF2 密钥模块级缓存（只派生一次） | `app/utils/crypto.py` | P0 | 0.5h | Fernet 实例模块级缓存，服务启动后不重复派生 | ✅ |
 | PERF-02 | 移除运行时 `__import__("time")` / `__import__("datetime")` | `app/services/channel_service.py` | P0 | 0.5h | 顶部 `import time, datetime` 标准导入 | ✅ |
 | PERF-03 | `/v1/models/categories` 从 16 次查询优化为单次 GROUP BY | `app/routers/relay.py` | P1 | 2h | 单次查询 + `json_group_array` 聚合 | ✅ |
-| PERF-04 | `/admin/stats/overview` 5 次串行 COUNT → `asyncio.gather` 并发 + 缓存 | `app/routers/admin.py` | P1 | 2h | 并发查询 + 30s TTL 缓存 | ✅ |
+| PERF-04 | `/admin/stats/overview` 串行 COUNT + 缓存 | `app/routers/admin.py` | P1 | 2h | 串行查询 + 30s TTL 缓存（asyncio.gather与SQLAlchemy冲突已修复） | ✅ |
 | PERF-05 | `preset_service` N+1 查询 → `WHERE code IN (...)` 批量 | `app/services/preset_service.py` | P1 | 1.5h | 批量查询替代逐个 SELECT | ✅ |
 | PERF-06 | HTML 缓存 `/admin/ui` | `app/routers/admin.py` | P1 | 0.5h | 启动时读入内存，请求直接返回 | ✅ |
 | PERF-07 | `list_models_admin` keyword 下推 SQL `ILIKE` | `app/routers/admin.py` | P1 | 1h | keyword 条件推到 SQL 层，不在 Python 侧过滤 | ✅ |
 | PERF-08 | `list_logs` subquery COUNT → 直接 COUNT | `app/routers/admin.py` | P1 | 0.5h | `select(func.count()).select_from(RequestLog).where(...)` | ✅ |
-| PERF-09 | 渠道匹配从 `Channel.models LIKE %model%` 迁移到 Ability JOIN | `app/services/distributor.py` | P1 | 4h | `select(Channel).join(Ability).where(Ability.model==model)` 为主路径 | ⬜ |
-| PERF-10 | 渠道探测 OpenAI/Gemini 并行化 | `app/services/channel_service.py` | P2 | 1.5h | `asyncio.gather` 并行探测 | ⬜ |
+| PERF-09 | 渠道匹配从 `Channel.models LIKE %model%` 迁移到 Ability JOIN | `app/services/distributor.py` | P1 | 4h | `select(Channel).join(Ability).where(Ability.model==model)` 为主路径 | ✅ |
+| PERF-10 | 渠道探测 OpenAI/Gemini 并行化 | `app/services/channel_service.py` | P2 | 1.5h | `asyncio.gather` 并行探测 | ✅ |
 | PERF-11 | SQLite 开启 WAL 模式 | `app/database.py` | P2 | 0.5h | `pragma journal_mode=wal` | ⬜ |
 
 ---
@@ -108,11 +108,13 @@
 | ✅ PERF-01 | 性能 | PBKDF2 密钥缓存 |
 | ✅ PERF-02 | 性能 | 移除运行时 __import__ |
 | ✅ PERF-03 | 性能 | models/categories GROUP BY 优化 |
-| ✅ PERF-04 | 性能 | stats 并发 + 缓存 |
+| ✅ PERF-04 | 性能 | stats 串行查询 + 缓存(gather冲突已修复) |
 | ✅ PERF-05 | 性能 | preset N+1 → IN 批量 |
 | ✅ PERF-06 | 性能 | admin/ui HTML 缓存 |
 | ✅ PERF-07 | 性能 | keyword SQL ILIKE |
 | ✅ PERF-08 | 性能 | logs 直接 COUNT |
+| ✅ PERF-09 | 性能 | 渠道匹配Ability JOIN |
+| ✅ PERF-10 | 性能 | 网络探测并行化 |
 | ✅ ROB-01 | 健壮 | except 异常日志 |
 | ✅ ROB-02 | 健壮 | admin 白名单 setattr |
 | ✅ ROB-03 | 健壮 | 全项目 logger |
@@ -157,11 +159,14 @@
 
 | 类别 | 已完成 | 剩余 + 未开始 | 总计 |
 |---|---|---|---|
-| 性能优化 | 12h | 9h (4 任务) | 21h |
-| 健壮性 | 6.5h | 2.5h (3 任务) | 9h |
+| 性能优化 | 17.5h | 0.5h (1 任务: WAL) | 18h |
+| 健壮性 | 9h | 2.5h (3 任务) | 11.5h |
+| Bug修复 | 12h | 0h | 12h |
+| 安全加固 | 4h | 0h | 4h |
 | Feature 开发 | 3h | 32h (14 任务) | 35h |
 | 架构优化 | 0h | 43h (11 任务) | 43h |
-| **合计** | **21.5h** | **86.5h** | **108h** |
+| 部署修复 | 6h | 0h | 6h |
+| **合计** | **51.5h** | **78h** | **129.5h** |
 
 ---
 

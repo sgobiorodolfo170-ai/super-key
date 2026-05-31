@@ -50,11 +50,11 @@
 
 ### S1.3 性能快速修补
 
-| 任务 | 说明 | 工时 |
-|---|---|---|
-| 渠道匹配从 `LIKE %model%` 迁移到 Ability 表 JOIN | 解决假匹配问题 | 4h |
-| 非流式路径添加异常重试 | `relay_service.py` `_relay_non_stream` | 3h |
-| SQLite WAL 模式开启 | `database.py` `engine.execution_options` | 0.5h |
+| 任务 | 说明 | 工时 | 状态 |
+|---|---|---|---|
+| 渠道匹配从 `LIKE %model%` 迁移到 Ability 表 JOIN | 解决假匹配问题 | 4h | ✅ |
+| 非流式路径添加异常重试 | `relay_service.py` `_relay_non_stream` | 3h | ⬜ |
+| SQLite WAL 模式开启 | `database.py` `engine.execution_options` | 0.5h | ⬜ |
 
 ---
 
@@ -153,13 +153,13 @@
 | 适配器配置界面 | admin 面板配置额外适配器参数 |
 | 第三方适配器支持 | 用户自定义适配器 Python 文件上传 |
 
-### L4.5 自定义模型"多渠道路由"模式落地
+### L4.5 自定义模型"多渠道路由"模式落地 ✅ 已完成
 
-| 任务 | 说明 |
-|---|---|
-| `selection_mode == "multi"` | 通过 `CustomModelChannel` 表加权分发 |
-| 前端 UI 补全 | 自定义模型编辑面板中多渠道路由配置 |
-| 与 Distributor 集成 | `resolve_model → select_channel_multi()` |
+| 任务 | 说明 | 状态 |
+|---|---|---|
+| `selection_mode == "multi"` | 通过 `CustomModelChannel` 表加权分发 | ✅ |
+| 前端 UI 补全 | 自定义模型编辑面板中多渠道路由配置 | ✅ |
+| 与 Distributor 集成 | `resolve_model → select_channel_multi()` | ✅ |
 
 ---
 
@@ -178,9 +178,11 @@ N+1查询         JOIN            批量预加载        加权响应时间
 
 ```
 当前  ──────►    S1.2   ──────►    S3.2   ──────►   L4.2
-API Key加密     salt配置化      RequestID        多Worker session
-bcrypt密码      env变量        RateLimit         持久化session
-全局异常兜底     JSON配置      日志脱敏/轮转      API Key审计
+API Key加密     ✅已完成       RequestID        多Worker session
+bcrypt密码      ✅env变量      RateLimit         持久化session
+全局异常兜底     ✅弱密钥检测   日志脱敏/轮转      API Key审计
+session并发锁   ✅asyncio.Lock
+默认密码随机化   ✅secrets
 ```
 
 ### 5.3 可维护性路线
@@ -209,7 +211,7 @@ dict满天飞      回归保障       OpenAPI文档        第三方适配器
 | 指标 | 当前 | M1 | M2 | M3 |
 |---|---|---|---|---|
 | OpenAI 兼容端点 | 8/12 (67%) | 8/12 | 12/12 | 13/13(+WS) |
-| Admin 端点 | 41 | 41 | 54 | 54 |
+| Admin 端点 | 42 | 42 | 54 | 54 |
 | 测试覆盖率 | 0% | >80% | >85% | >90% |
 | 预置模型数 | 31 | 176 | 176 | 200+ |
 | 预置提供商数 | 17 | 30 | 30 | 30 |

@@ -392,6 +392,8 @@ class ModelClassification(Base):
     supports_tools: bool    = Column(Boolean, default=False)
     release_date: str       = Column(String(20), default="")
     is_deprecated: bool     = Column(Boolean, default=False)
+    is_builtin: bool        = Column(Boolean, default=False)
+    is_active: bool         = Column(Boolean, default=True)
     sort_order: int         = Column(Integer, default=0)
     created_at: datetime    = Column(DateTime, default=func.now())
     updated_at: datetime    = Column(DateTime, default=func.now(), onupdate=func.now())
