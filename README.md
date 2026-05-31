@@ -67,11 +67,20 @@ pip install -r requirements.txt
 SUPER_KEY_HOST=0.0.0.0
 SUPER_KEY_PORT=8000
 
+# API Token（必须修改为强随机值！）
+SUPER_KEY_API_TOKEN=sk-your-strong-random-api-token-here
+
 # 数据库路径
 SUPER_KEY_DATABASE_URL=sqlite+aiosqlite:///./data/super_key.db
 
 # 加密密钥（32 位字符串，请务必修改！）
 SUPER_KEY_ENCRYPTION_KEY=your-32-character-encryption-key
+
+# 管理员 Token（必须修改为强随机值！）
+ADMIN_TOKEN=your-strong-random-admin-token
+
+# 默认管理员密码（留空则自动生成并打印到日志）
+SUPER_KEY_DEFAULT_ADMIN_PASSWORD=
 
 # 日志级别
 SUPER_KEY_LOG_LEVEL=INFO
@@ -89,11 +98,12 @@ python run.py
 
 ### 4. 初始登录
 
-管理面板默认账号：
-- 用户名：`admin`
-- 密码：`admin123`
+管理面板默认账号：`admin`，密码为 `.env` 中 `SUPER_KEY_DEFAULT_ADMIN_PASSWORD` 的值。若未设置，启动时日志会打印自动生成的随机密码。
 
 > ⚠️ **首次登录后请立即修改密码！**
+> ⚠️ **使用默认弱密钥启动时会有安全警告，生产环境务必修改！**
+
+> **注意**：SQLite 不支持 Vercel 等 Serverless 环境（只读文件系统）。如需 Serverless 部署，请使用 Turso / Vercel Postgres 等外部数据库。
 
 ---
 
