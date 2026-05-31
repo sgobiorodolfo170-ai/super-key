@@ -994,3 +994,11 @@ bcrypt>=4.0.0
 - 批量删除：channel_mappings 使用 SQL `DELETE WHERE` 替代循环 `session.delete()`
 - 并行网络探测：OpenAI/Gemini 探测使用 `asyncio.gather()` 并行执行
 - 数据库连接池：配置 `pool_pre_ping=True` 和 `check_same_thread=False`
+
+### 9.6 部署与数据库
+- 数据库路径：`database.py` 将相对路径解析为绝对路径后传给 `create_async_engine`，避免 cwd 不一致导致路径错误
+- 自动迁移：`init_db()` 在 `create_all` 之后执行自动迁移逻辑，检测已有表缺失的列并执行 `ALTER TABLE ADD COLUMN`，替代 Alembic
+- 数据库文件：`data/super_key.db` 不纳入 git 跟踪（`.gitignore` 排除 `*.db`），首次启动自动创建
+- 配置模板：`.env.example` 提供完整环境变量模板，部署者复制为 `.env` 后修改
+- Vercel 限制：SQLite 不兼容 Serverless 环境（只读文件系统），需使用 Turso/Vercel Postgres 等外部数据库
+- 目录结构：`data/.gitkeep` 确保空目录被 git 跟踪

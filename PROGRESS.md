@@ -144,6 +144,12 @@
 | ✅ PERF-14 | 性能 | 数据库连接池配置(pool_pre_ping) |
 | ✅ ROB-09 | 健壮 | relay.py JSON解析异常捕获返回400 |
 | ✅ ROB-10 | 健壮 | stats_overview修复asyncio.gather与SQLAlchemy冲突 |
+| ✅ DEPLOY-01 | 部署 | .gitignore排除db文件，git rm --cached移除 |
+| ✅ DEPLOY-02 | 部署 | init_db()添加自动迁移逻辑(检测缺失列并ALTER TABLE) |
+| ✅ DEPLOY-03 | 部署 | database.py修复路径不一致(相对路径→绝对路径) |
+| ✅ DEPLOY-04 | 部署 | 创建.env.example配置模板并提交 |
+| ✅ DEPLOY-05 | 部署 | data/目录添加.gitkeep确保被git跟踪 |
+| ✅ DEPLOY-06 | 部署 | 添加vercel.json配置，README说明SQLite不兼容Serverless |
 
 ---
 
